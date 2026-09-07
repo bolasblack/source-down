@@ -1,0 +1,39 @@
+[package]
+name = "source-down"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+description = "Turn source code, comments, and project directives into traceable Markdown"
+
+[dependencies]
+tree-sitter = "=0.25.10"
+tree-sitter-rust = "=0.24.0"
+tree-sitter-ocaml = "=0.25.0"
+tree-sitter-javascript = "=0.25.0"
+tree-sitter-typescript = "=0.23.2"
+tree-sitter-go = "=0.25.0"
+tree-sitter-python = "=0.25.0"
+pulldown-cmark = { version = "=0.13.0", default-features = false }
+clap = { version = "=4.5.50", features = ["derive"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.145", features = ["float_roundtrip"] }
+toml = "=0.9.8"
+# Pin the grammar, because newer compatible releases accept TOML 1.1.
+toml_parser = "=1.0.5"
+libc = "=0.2.177"
+signal-hook = "=0.3.18"
+tempfile = "=3.23.0"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[workspace]
+
+[[example]]
+name = "spec-plugin"
+path = "tools/spec_plugin.rs"
+
+[[example]]
+name = "session-benchmark"
+path = "tools/session_benchmark.rs"

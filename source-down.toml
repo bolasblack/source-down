@@ -1,0 +1,9 @@
+config_version = 1
+
+[plugins.project]
+command = ["python3", "tools/project_docs.py"]
+directives = ["package", "modules", "api"]
+
+[plugins.spec]
+command = ["target/release/examples/spec-plugin"]
+directives = ["spec"]

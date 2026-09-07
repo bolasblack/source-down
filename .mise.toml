@@ -1,0 +1,64 @@
+min_version = "2026.6.2"
+
+[tools]
+rust = { version = "1.90.0", profile = "minimal", components = "rustfmt,clippy,llvm-tools-preview" }
+python = "3.14.7"
+zig = "0.15.2"
+"aqua:taiki-e/cargo-llvm-cov" = "0.6.21"
+
+[env]
+CC = "{{config_root}}/tools/cc"
+AR = "{{config_root}}/tools/ar"
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/tools/cc"
+ZIG_GLOBAL_CACHE_DIR = "{{config_root}}/.source-down/cache/zig"
+
+[tasks.build]
+description = "Build the release CLI and project spec plugin"
+run = "cargo build --locked --release --bins --examples"
+
+[tasks.test]
+description = "Run all tests and require at least 90% line coverage in each production scope"
+depends = ["coverage-setup"]
+run = "python3 tools/test.py"
+
+[tasks.coverage-setup]
+description = "Prepare the isolated Python coverage tool"
+sources = [".mise.toml"]
+outputs = [".source-down/coverage-env/bin/coverage"]
+run = [
+  "rustup component add llvm-tools-preview",
+  "python3 -m venv .source-down/coverage-env",
+  ".source-down/coverage-env/bin/python -m pip install --disable-pip-version-check coverage==7.11.0",
+]
+
+[tasks.lint]
+description = "Check formatting, Clippy, documentation and AGD independence"
+run = [
+  "cargo fmt --all -- --check",
+  "cargo clippy --locked --all-targets -- -D warnings",
+  "python3 tools/check_docs.py",
+]
+
+[tasks.check]
+description = "Run static checks and tests with 90% coverage gates"
+depends = ["lint", "test"]
+
+[tasks.review]
+description = "Render the complete project and authored guide"
+depends = ["build"]
+run = "target/release/source-down render src tools tests examples docs/guide"
+
+[tasks.acceptance]
+description = "Verify self-use and real plugin boundaries in a temporary copy"
+depends = ["build"]
+run = "python3 tools/acceptance.py"
+
+[tasks.benchmark]
+description = "Measure six workloads and save raw results"
+depends = ["build"]
+run = "python3 tools/benchmark.py"
+
+[tasks.release]
+description = "Package and verify the binary and relocatable source archives"
+depends = ["build"]
+run = "python3 tools/release.py"

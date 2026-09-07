@@ -1,0 +1,14 @@
+[tool.coverage.run]
+source = ["${SD_COVERAGE_ROOT}/tools"]
+data_file = "${SD_COVERAGE_DATA}"
+parallel = true
+patch = ["subprocess"]
+# The suite runner executes tests; production lines execute in child plugins.
+# The gate checks combined data and fails if those children have no coverage.
+disable_warnings = ["no-data-collected"]
+
+[tool.coverage.report]
+include = ["*/tools/project_docs.py"]
+exclude_lines = []
+precision = 2
+show_missing = true

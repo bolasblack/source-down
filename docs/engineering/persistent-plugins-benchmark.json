@@ -1,0 +1,570 @@
+{
+  "platform": "Linux-7.0.2-6-pve-x86_64-with-glibc2.41",
+  "machine": "x86_64",
+  "logical_cpus": 12,
+  "binary": "/root/sidework/source-down/target/release/source-down",
+  "build": "release",
+  "protocol_version": 1,
+  "invocations_per_case": 3,
+  "rounds_per_session": 3,
+  "versions": {
+    "source-down": "0.1.0",
+    "tree-sitter": "0.25.10",
+    "tree-sitter-go": "0.25.0",
+    "tree-sitter-javascript": "0.25.0",
+    "tree-sitter-language": "0.1.8",
+    "tree-sitter-ocaml": "0.25.0",
+    "tree-sitter-python": "0.25.0",
+    "tree-sitter-rust": "0.24.0",
+    "tree-sitter-typescript": "0.23.2"
+  },
+  "rss_definition": "Linux wait4 via a minimal C launcher, maximum RSS in KiB; not the sum of concurrent process RSS",
+  "cases": [
+    {
+      "files": 1,
+      "directives": 0,
+      "mode": "none",
+      "source_bytes": 17280,
+      "plugin_material_bytes": 0,
+      "runs": [
+        {
+          "run": 1,
+          "kind": "first",
+          "wall_seconds": 0.021335187,
+          "user_seconds": 0.009247,
+          "system_seconds": 0.001027,
+          "max_rss_kib": 5284,
+          "raw_wait4_status": 0,
+          "minor_faults": 353,
+          "major_faults": 0,
+          "plugin_starts": 0,
+          "plugin_request_counts": [],
+          "maximum_frame_bytes": 0,
+          "output_bytes": 110671
+        },
+        {
+          "run": 2,
+          "kind": "repeat",
+          "wall_seconds": 0.021162736,
+          "user_seconds": 0.008316,
+          "system_seconds": 0.001848,
+          "max_rss_kib": 5244,
+          "raw_wait4_status": 0,
+          "minor_faults": 351,
+          "major_faults": 0,
+          "plugin_starts": 0,
+          "plugin_request_counts": [],
+          "maximum_frame_bytes": 0,
+          "output_bytes": 110671
+        },
+        {
+          "run": 3,
+          "kind": "repeat",
+          "wall_seconds": 0.021102734,
+          "user_seconds": 0.007969,
+          "system_seconds": 0.001992,
+          "max_rss_kib": 5220,
+          "raw_wait4_status": 0,
+          "minor_faults": 353,
+          "major_faults": 0,
+          "plugin_starts": 0,
+          "plugin_request_counts": [],
+          "maximum_frame_bytes": 0,
+          "output_bytes": 110671
+        }
+      ],
+      "session": {
+        "wall_seconds": 0.041321262,
+        "user_seconds": 0.027893,
+        "system_seconds": 0.0,
+        "max_rss_kib": 5576,
+        "raw_wait4_status": 0,
+        "minor_faults": 378,
+        "major_faults": 0,
+        "close_ms": 13.510426,
+        "rounds": [
+          {
+            "batch_id": "r1",
+            "elapsed_ms": 9.185925
+          },
+          {
+            "batch_id": "r2",
+            "elapsed_ms": 8.845135
+          },
+          {
+            "batch_id": "r3",
+            "elapsed_ms": 8.817694
+          }
+        ],
+        "plugin_starts": 0,
+        "plugin_pids": [],
+        "plugin_request_counts": [],
+        "output_bytes": 110671,
+        "maximum_frame_bytes": 0
+      }
+    },
+    {
+      "files": 1,
+      "directives": 500,
+      "mode": "same",
+      "source_bytes": 24390,
+      "plugin_material_bytes": 0,
+      "runs": [
+        {
+          "run": 1,
+          "kind": "first",
+          "wall_seconds": 0.058430651,
+          "user_seconds": 0.034554,
+          "system_seconds": 0.005894,
+          "max_rss_kib": 13584,
+          "raw_wait4_status": 0,
+          "minor_faults": 2274,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 94394,
+          "output_bytes": 161040
+        },
+        {
+          "run": 2,
+          "kind": "repeat",
+          "wall_seconds": 0.06863185,
+          "user_seconds": 0.034361,
+          "system_seconds": 0.006407,
+          "max_rss_kib": 13388,
+          "raw_wait4_status": 0,
+          "minor_faults": 2277,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 94394,
+          "output_bytes": 161040
+        },
+        {
+          "run": 3,
+          "kind": "repeat",
+          "wall_seconds": 0.069036838,
+          "user_seconds": 0.030106,
+          "system_seconds": 0.009304,
+          "max_rss_kib": 13376,
+          "raw_wait4_status": 0,
+          "minor_faults": 2273,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 94394,
+          "output_bytes": 161040
+        }
+      ],
+      "session": {
+        "wall_seconds": 0.123646897,
+        "user_seconds": 0.083353,
+        "system_seconds": 0.006929,
+        "max_rss_kib": 14068,
+        "raw_wait4_status": 0,
+        "minor_faults": 2466,
+        "major_faults": 0,
+        "close_ms": 4.028785,
+        "rounds": [
+          {
+            "batch_id": "r1",
+            "elapsed_ms": 53.89331
+          },
+          {
+            "batch_id": "r2",
+            "elapsed_ms": 32.313187
+          },
+          {
+            "batch_id": "r3",
+            "elapsed_ms": 32.405513
+          }
+        ],
+        "plugin_starts": 1,
+        "plugin_pids": [
+          "99"
+        ],
+        "plugin_request_counts": [
+          "500",
+          "500",
+          "500"
+        ],
+        "output_bytes": 161040,
+        "maximum_frame_bytes": 94394
+      }
+    },
+    {
+      "files": 1,
+      "directives": 500,
+      "mode": "different",
+      "source_bytes": 21780,
+      "plugin_material_bytes": 0,
+      "runs": [
+        {
+          "run": 1,
+          "kind": "first",
+          "wall_seconds": 0.067834083,
+          "user_seconds": 0.034396,
+          "system_seconds": 0.003931,
+          "max_rss_kib": 13300,
+          "raw_wait4_status": 0,
+          "minor_faults": 2260,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 91725,
+          "output_bytes": 158254
+        },
+        {
+          "run": 2,
+          "kind": "repeat",
+          "wall_seconds": 0.068738675,
+          "user_seconds": 0.033975,
+          "system_seconds": 0.004899,
+          "max_rss_kib": 13312,
+          "raw_wait4_status": 0,
+          "minor_faults": 2261,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 91725,
+          "output_bytes": 158254
+        },
+        {
+          "run": 3,
+          "kind": "repeat",
+          "wall_seconds": 0.067651449,
+          "user_seconds": 0.034798,
+          "system_seconds": 0.003105,
+          "max_rss_kib": 13492,
+          "raw_wait4_status": 0,
+          "minor_faults": 2258,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 91725,
+          "output_bytes": 158254
+        }
+      ],
+      "session": {
+        "wall_seconds": 0.133111882,
+        "user_seconds": 0.075775,
+        "system_seconds": 0.007985,
+        "max_rss_kib": 13996,
+        "raw_wait4_status": 0,
+        "minor_faults": 2451,
+        "major_faults": 0,
+        "close_ms": 15.175787,
+        "rounds": [
+          {
+            "batch_id": "r1",
+            "elapsed_ms": 52.160927
+          },
+          {
+            "batch_id": "r2",
+            "elapsed_ms": 32.473548
+          },
+          {
+            "batch_id": "r3",
+            "elapsed_ms": 32.260535
+          }
+        ],
+        "plugin_starts": 1,
+        "plugin_pids": [
+          "115"
+        ],
+        "plugin_request_counts": [
+          "500",
+          "500",
+          "500"
+        ],
+        "output_bytes": 158254,
+        "maximum_frame_bytes": 91725
+      }
+    },
+    {
+      "files": 100,
+      "directives": 0,
+      "mode": "none",
+      "source_bytes": 17280,
+      "plugin_material_bytes": 0,
+      "runs": [
+        {
+          "run": 1,
+          "kind": "first",
+          "wall_seconds": 0.022980185,
+          "user_seconds": 0.004056,
+          "system_seconds": 0.003042,
+          "max_rss_kib": 5480,
+          "raw_wait4_status": 0,
+          "minor_faults": 370,
+          "major_faults": 0,
+          "plugin_starts": 0,
+          "plugin_request_counts": [],
+          "maximum_frame_bytes": 0,
+          "output_bytes": 102940
+        },
+        {
+          "run": 2,
+          "kind": "repeat",
+          "wall_seconds": 0.022733819,
+          "user_seconds": 0.001939,
+          "system_seconds": 0.004847,
+          "max_rss_kib": 5548,
+          "raw_wait4_status": 0,
+          "minor_faults": 369,
+          "major_faults": 0,
+          "plugin_starts": 0,
+          "plugin_request_counts": [],
+          "maximum_frame_bytes": 0,
+          "output_bytes": 102940
+        },
+        {
+          "run": 3,
+          "kind": "repeat",
+          "wall_seconds": 0.022824016,
+          "user_seconds": 0.003421,
+          "system_seconds": 0.003421,
+          "max_rss_kib": 5300,
+          "raw_wait4_status": 0,
+          "minor_faults": 369,
+          "major_faults": 0,
+          "plugin_starts": 0,
+          "plugin_request_counts": [],
+          "maximum_frame_bytes": 0,
+          "output_bytes": 102940
+        }
+      ],
+      "session": {
+        "wall_seconds": 0.031418854,
+        "user_seconds": 0.013479,
+        "system_seconds": 0.004351,
+        "max_rss_kib": 5780,
+        "raw_wait4_status": 0,
+        "minor_faults": 390,
+        "major_faults": 0,
+        "close_ms": 13.353403,
+        "rounds": [
+          {
+            "batch_id": "r1",
+            "elapsed_ms": 5.972516
+          },
+          {
+            "batch_id": "r2",
+            "elapsed_ms": 5.505355
+          },
+          {
+            "batch_id": "r3",
+            "elapsed_ms": 5.525037
+          }
+        ],
+        "plugin_starts": 0,
+        "plugin_pids": [],
+        "plugin_request_counts": [],
+        "output_bytes": 102940,
+        "maximum_frame_bytes": 0
+      }
+    },
+    {
+      "files": 100,
+      "directives": 500,
+      "mode": "same",
+      "source_bytes": 24390,
+      "plugin_material_bytes": 0,
+      "runs": [
+        {
+          "run": 1,
+          "kind": "first",
+          "wall_seconds": 0.059406067,
+          "user_seconds": 0.019724,
+          "system_seconds": 0.006116,
+          "max_rss_kib": 13416,
+          "raw_wait4_status": 0,
+          "minor_faults": 2256,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 91732,
+          "output_bytes": 148350
+        },
+        {
+          "run": 2,
+          "kind": "repeat",
+          "wall_seconds": 0.059577064,
+          "user_seconds": 0.019347,
+          "system_seconds": 0.00674,
+          "max_rss_kib": 13396,
+          "raw_wait4_status": 0,
+          "minor_faults": 2256,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 91732,
+          "output_bytes": 148350
+        },
+        {
+          "run": 3,
+          "kind": "repeat",
+          "wall_seconds": 0.058298689,
+          "user_seconds": 0.019456,
+          "system_seconds": 0.005262,
+          "max_rss_kib": 13512,
+          "raw_wait4_status": 0,
+          "minor_faults": 2256,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 91732,
+          "output_bytes": 148350
+        }
+      ],
+      "session": {
+        "wall_seconds": 0.073217333,
+        "user_seconds": 0.034007,
+        "system_seconds": 0.013407,
+        "max_rss_kib": 14148,
+        "raw_wait4_status": 0,
+        "minor_faults": 2416,
+        "major_faults": 0,
+        "close_ms": 8.449347,
+        "rounds": [
+          {
+            "batch_id": "r1",
+            "elapsed_ms": 39.284106
+          },
+          {
+            "batch_id": "r2",
+            "elapsed_ms": 12.137144000000001
+          },
+          {
+            "batch_id": "r3",
+            "elapsed_ms": 12.121039
+          }
+        ],
+        "plugin_starts": 1,
+        "plugin_pids": [
+          "143"
+        ],
+        "plugin_request_counts": [
+          "500",
+          "500",
+          "500"
+        ],
+        "output_bytes": 148350,
+        "maximum_frame_bytes": 91732
+      }
+    },
+    {
+      "files": 100,
+      "directives": 500,
+      "mode": "different",
+      "source_bytes": 21780,
+      "plugin_material_bytes": 0,
+      "runs": [
+        {
+          "run": 1,
+          "kind": "first",
+          "wall_seconds": 0.049971703,
+          "user_seconds": 0.01658,
+          "system_seconds": 0.009616,
+          "max_rss_kib": 13560,
+          "raw_wait4_status": 0,
+          "minor_faults": 2258,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 89042,
+          "output_bytes": 145580
+        },
+        {
+          "run": 2,
+          "kind": "repeat",
+          "wall_seconds": 0.049880566,
+          "user_seconds": 0.017875,
+          "system_seconds": 0.007992,
+          "max_rss_kib": 13560,
+          "raw_wait4_status": 0,
+          "minor_faults": 2254,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 89042,
+          "output_bytes": 145580
+        },
+        {
+          "run": 3,
+          "kind": "repeat",
+          "wall_seconds": 0.060135421,
+          "user_seconds": 0.019252,
+          "system_seconds": 0.007308,
+          "max_rss_kib": 13560,
+          "raw_wait4_status": 0,
+          "minor_faults": 2254,
+          "major_faults": 0,
+          "plugin_starts": 1,
+          "plugin_request_counts": [
+            "500"
+          ],
+          "maximum_frame_bytes": 89042,
+          "output_bytes": 145580
+        }
+      ],
+      "session": {
+        "wall_seconds": 0.082652102,
+        "user_seconds": 0.028863,
+        "system_seconds": 0.017756,
+        "max_rss_kib": 13896,
+        "raw_wait4_status": 0,
+        "minor_faults": 2424,
+        "major_faults": 0,
+        "close_ms": 17.922144,
+        "rounds": [
+          {
+            "batch_id": "r1",
+            "elapsed_ms": 39.505796000000004
+          },
+          {
+            "batch_id": "r2",
+            "elapsed_ms": 12.058555
+          },
+          {
+            "batch_id": "r3",
+            "elapsed_ms": 11.990726
+          }
+        ],
+        "plugin_starts": 1,
+        "plugin_pids": [
+          "159"
+        ],
+        "plugin_request_counts": [
+          "500",
+          "500",
+          "500"
+        ],
+        "output_bytes": 145580,
+        "maximum_frame_bytes": 89042
+      }
+    }
+  ]
+}

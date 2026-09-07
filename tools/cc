@@ -1,0 +1,20 @@
+#!/bin/sh
+# One executable path for Cargo, cc-rs, and the real-boundary test launchers.
+# Translate the release target's Rust spelling to Zig's target spelling.
+linker_symbol=false
+for argument do
+    shift
+    if [ "$linker_symbol" = true ]; then
+        set -- "$@" -Xlinker "$argument"
+        linker_symbol=false
+        continue
+    fi
+    case "$argument" in
+        --target=x86_64-unknown-linux-gnu) argument=--target=x86_64-linux-gnu ;;
+        # Rust's coverage runtime uses the GCC driver's -u SYMBOL spelling.
+        # Forward the option and its literal operand directly to Zig's linker.
+        -u) set -- "$@" -Xlinker -u; linker_symbol=true; continue ;;
+    esac
+    set -- "$@" "$argument"
+done
+exec zig cc --target=x86_64-linux-gnu "$@"

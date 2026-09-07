@@ -1,0 +1,6 @@
+{
+  "tags": ["architecture", "conformance", "self-hosting", "tooling"],
+  "disableAutoUpdateScripts": [],
+  "postValidateAgdsScripts": [],
+  "postGenerateIndexScripts": []
+}

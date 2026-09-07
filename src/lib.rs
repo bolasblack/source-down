@@ -1,0 +1,22 @@
+//! # Source Down
+//!
+//! {% package "Build identity" %}
+//!
+//! {% modules %}
+//!
+// {% spec "mod-001" %}
+//! Source Down's reusable source and plugin model.
+
+pub mod config;
+pub mod directives;
+pub mod engine;
+pub mod external;
+pub mod json;
+pub mod lang;
+pub mod markdown;
+pub mod model;
+mod publication;
+pub mod render;
+pub mod results;
+mod selection;
+pub mod source;

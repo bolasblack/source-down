@@ -1,0 +1,13 @@
+> **Source**: [`guide.md:L1-L3`](../../guide.md#L1) · bytes [0,43)
+
+# Guide
+
+
+
+> **Call site**: [`guide.md:L3-L3`](../../guide.md#L3) · bytes [9,42)
+>
+> **Content source**: [`snippet.rs:L1-L1`](../../snippet.rs#L1) · bytes [0,9)
+
+```rust
+fn f() {}
+```

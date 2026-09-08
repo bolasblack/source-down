@@ -1,16 +1,19 @@
 //! Directive implementations share the public plugin contract. SPEC-BLT-001.
 
 mod include;
+mod link;
 mod syntax;
 
 pub use syntax::extract;
 
 use crate::model::{
-    Arguments, Dependency, MarkdownFragment, Plugin, PluginBatch, PluginFailure, PluginOutput,
-    PluginResult, Registration, Result, SourceFile, SourceStore, validate_relative_path,
+    Arguments, Content, ContentNode, Dependency, MarkdownFragment, Plugin, PluginBatch,
+    PluginFailure, PluginOutput, PluginResult, Registration, Result, SourceFile, SourceStore,
+    validate_relative_path,
 };
 use std::collections::BTreeMap;
 
+use crate::navigation::Context;
 use crate::selection::{ContentResult, Failure};
 
 // {% spec "blt-002" %}
@@ -55,28 +58,14 @@ pub(super) fn selected(file: &SourceFile, start: usize, end: usize) -> ContentRe
     Ok(text)
 }
 
-fn result(id: &str, outcome: ContentResult<MarkdownFragment>) -> PluginResult {
-    match outcome {
-        Ok(fragment) => PluginResult::Ok {
-            id: id.into(),
-            content: fragment.into(),
-        },
-        Err(failure) => PluginResult::Error(PluginFailure {
-            id: id.into(),
-            code: failure.code.into(),
-            message: failure.message,
-        }),
-    }
-}
-
 // {% spec "blt-001" %}
 pub fn registrations() -> Vec<Registration> {
     STANDARD
         .iter()
-        .map(|&(name, create)| Registration {
+        .map(|&(name, _)| Registration {
             id: format!("builtin:{name}"),
             directives: vec![name.into()],
-            plugin: Box::new(Builtin { name, create }),
+            plugin: Box::new(Builtin { name }),
         })
         .collect()
 }
@@ -84,14 +73,24 @@ pub fn registrations() -> Vec<Registration> {
 pub(crate) struct OperationOutput {
     pub content: ContentResult<MarkdownFragment>,
     pub dependencies: Vec<Dependency>,
+    pub navigation: Vec<crate::navigation::Reference>,
 }
 
 pub(crate) trait ContentOperation {
-    fn call(&mut self, arguments: &Arguments, sources: &mut SourceStore) -> OperationOutput;
+    fn call(
+        &mut self,
+        arguments: &Arguments,
+        sources: &mut SourceStore,
+        context: &Context<'_>,
+    ) -> OperationOutput;
 }
 
 type Factory = fn() -> Box<dyn ContentOperation>;
-const STANDARD: &[(&str, Factory)] = &[("include", || Box::<include::Include>::default())];
+// {% spec "blt-009" %}
+const STANDARD: &[(&str, Factory)] = &[
+    ("include", || Box::<include::Include>::default()),
+    ("link", || Box::new(link::Link)),
+];
 
 pub(crate) fn is_standard(name: &str) -> bool {
     STANDARD.iter().any(|(known, _)| *known == name)
@@ -115,38 +114,50 @@ impl StandardOperations {
         name: &str,
         arguments: &Arguments,
         sources: &mut SourceStore,
+        context: &Context<'_>,
     ) -> OperationOutput {
         self.0
             .get_mut(name)
             .expect("validated standard capability")
-            .call(arguments, sources)
+            .call(arguments, sources, context)
     }
 }
 
 struct Builtin {
     name: &'static str,
-    create: Factory,
 }
 
 impl Plugin for Builtin {
-    fn run(&mut self, batch: &PluginBatch, sources: &mut SourceStore) -> Result<PluginOutput> {
-        let mut operation = (self.create)();
-        let mut output = PluginOutput::default();
-        for request in &batch.requests {
-            let outcome = if request.directive == self.name {
-                let value = operation.call(&request.arguments, sources);
-                output.dependencies.extend(value.dependencies);
-                value.content
-            } else {
-                Err(Failure::new(
-                    "invalid_arguments",
-                    format!("{}: unexpected directive {}", self.name, request.directive),
-                ))
-            };
-            output.results.push(result(&request.id, outcome));
-        }
-        output.dependencies.sort();
-        output.dependencies.dedup();
-        Ok(output)
+    fn run(&mut self, batch: &PluginBatch, _sources: &mut SourceStore) -> Result<PluginOutput> {
+        let results = batch
+            .requests
+            .iter()
+            .map(|request| {
+                if request.directive == self.name {
+                    PluginResult::Ok {
+                        id: request.id.clone(),
+                        content: Content::Blocks {
+                            content: vec![ContentNode::StandardCall {
+                                directive: self.name.into(),
+                                arguments: request.arguments.clone(),
+                            }],
+                        },
+                    }
+                } else {
+                    PluginResult::Error(PluginFailure {
+                        id: request.id.clone(),
+                        code: "invalid_arguments".into(),
+                        message: format!(
+                            "{}: unexpected directive {}",
+                            self.name, request.directive
+                        ),
+                    })
+                }
+            })
+            .collect();
+        Ok(PluginOutput {
+            results,
+            ..PluginOutput::default()
+        })
     }
 }

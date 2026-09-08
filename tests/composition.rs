@@ -942,3 +942,44 @@ fn cancellation_and_plugin_health_are_checked_after_a_delegated_material_read() 
         assert!(!Path::new(&format!("/proc/{}", batch[0].as_i64().unwrap())).exists());
     }
 }
+
+#[test]
+fn builtin_and_delegated_includes_share_one_rounds_source_bytes() {
+    // SPEC-PLG-007: one material snapshot is shared across all operation callers.
+    let root = tempfile::tempdir().unwrap();
+    fs::write(
+        root.path().join("notes.md"),
+        "{% include \"material.txt\" %}\n{% change %}\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("material.txt"), "original bytes").unwrap();
+    fs::write(
+        root.path().join("source-down.toml"),
+        "config_version=1\n[plugins.z]\ncommand=['python','z.py']\ndirectives=['change']\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("z.py"), common::plugin(r#"
+with open('material.txt', 'w') as f:
+    f.write('changed on disk')
+emit({'type':'result','batch_id':b['batch_id'],'results':[
+    {'id':r['id'],'status':'ok','content':[{'kind':'standard_call','directive':'include',
+        'arguments':{'positional':['material.txt'],'named':{'lines':[1,1]}}}]} for r in b['requests']
+], 'append':[], 'reports':{}, 'diagnostics':[], 'dependencies':[]})
+"#)).unwrap();
+    let mut session =
+        Session::new(root.path(), None, None, Arc::new(AtomicBool::new(false))).unwrap();
+    let mut prepared = session.prepare(&["notes.md".into()]).unwrap();
+    assert_eq!(
+        prepared.outcome().dependencies["builtin:include"],
+        prepared.outcome().dependencies["z"]
+    );
+    prepared.close_session().unwrap();
+    prepared.publish().unwrap();
+    let page = fs::read_to_string(root.path().join(".source-down/pages/notes.md.md")).unwrap();
+    assert_eq!(page.matches("original bytes").count(), 2);
+    assert!(!page.contains("changed on disk"));
+    assert_eq!(
+        fs::read_to_string(root.path().join("material.txt")).unwrap(),
+        "changed on disk"
+    );
+}

@@ -64,8 +64,8 @@ fn markdown_context_mixed_inputs_and_empty_plugins_share_the_real_batch() {
     fs::create_dir(root.path().join("book")).unwrap();
     let authored = concat!(
         "# 叙述\n\n```text\n{% hidden %}\n```\n\n",
-        "    {% hidden %}\n\n- item\n  {% hidden %}\n\n",
-        "> {% hidden %}\n\n<div>\n{% hidden %}\n</div>\n\n",
+        "    {% hidden %}\n\n- item\n  {% note id=[\"章节\",0] %}\n\n",
+        "> {% note id=[\"章节\",0] %}\n\n<div>\n{% hidden %}\n</div>\n\n",
         "`{% hidden %}`\n\n{% include 'book/a.rs' id=['f'] %}\n",
     )
     .replace("id=['f']", "id=[\"f\"]")
@@ -96,13 +96,13 @@ command = ["python", "observer.py"]
     let inventory =
         "assert b['input_files'] == ['book/a.md','book/a.rs','book/a.rs.md','book/empty.md']\n";
     fs::write(root.path().join("note.py"), common::plugin(&format!(r#"{inventory}
-assert len(b['requests']) == 1
-r = b['requests'][0]
-assert r['arguments']['named']['id'] == ['章节', 0]
-assert r['source']['path'] == 'book/a.md'
+assert len(b['requests']) == 3
 data = open('book/a.md','rb').read()
-assert data[r['source']['start_byte']:r['source']['end_byte']].decode() == '{{% note id=["章节",0] %}}'
-emit({{'type':'result','batch_id':b['batch_id'],'results':[{{'id':r['id'],'status':'ok','markdown':'{{% final.literal %}}','sources':[r['source']]}}],
+for r in b['requests']:
+    assert r['arguments']['named']['id'] == ['章节', 0]
+    assert r['source']['path'] == 'book/a.md'
+    assert data[r['source']['start_byte']:r['source']['end_byte']].decode() == '{{% note id=["章节",0] %}}'
+emit({{'type':'result','batch_id':b['batch_id'],'results':[{{'id':r['id'],'status':'ok','markdown':'{{% final.literal %}}','sources':[r['source']]}} for r in b['requests']],
       'append':[],'reports':{{}},'diagnostics':[],'dependencies':[]}})
 "#))).unwrap();
     fs::write(root.path().join("observer.py"), common::plugin(&format!(r#"{inventory}
@@ -125,8 +125,8 @@ emit({{'type':'result','batch_id':b['batch_id'],'results':[],
         let pages = root.path().join(output_dir).join("pages/book");
         let page = fs::read_to_string(pages.join("a.md.md")).unwrap();
         assert!(page.contains("# 叙述\r\n"));
-        assert_eq!(page.matches("{% hidden %}").count(), 6);
-        assert!(page.contains("{% final.literal %}"));
+        assert_eq!(page.matches("{% hidden %}").count(), 4);
+        assert_eq!(page.matches("{% final.literal %}").count(), 3);
         assert!(page.contains("End without newline\n\n"));
         assert!(page.contains("```rust\nfn f() {}\n```"));
         assert!(pages.join("a.rs.md").is_file());

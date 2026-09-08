@@ -3,24 +3,28 @@
 from pathlib import Path
 import re
 from urllib.parse import unquote
-from check_docs import outside_fences
 from support.project import SelfUseCase, markdown_snapshot
 
 
 def assert_guide_sources_and_links(case, project, pages, output_name=".source-down"):
     output = project.root / output_name
-    for name in ("index", "reading-source", "expanding-directives", "building-pages"):
+    navigation = {
+        "index": ["reading-source.md.md#reading-source", "expanding-directives.md.md#expanding-directives",
+                  "building-pages.md.md#building-pages", "searching.md.md#searching"],
+        "reading-source": ["expanding-directives.md.md#expanding-directives"],
+        "expanding-directives": ["reading-source.md.md#parse-source", "building-pages.md.md#building-pages"],
+        "building-pages": ["expanding-directives.md.md#directive-routing", "index.md.md#source-down-book"],
+    }
+    for name, targets in navigation.items():
         key = f"pages/docs/guide/{name}.md.md"
         case.assertIn(key, pages, "guide page must be produced in this run")
-        authored = project.read_bytes(f"docs/guide/{name}.md").decode("utf-8")
-        for line in outside_fences(authored):
-            for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)", line):
-                filename, _, anchor = target.partition("#")
-                case.assertIn(target.encode(), pages[key])
-                linked = ((output / key).parent / unquote(filename)).resolve()
-                target_key = linked.relative_to(output.resolve()).as_posix()
-                case.assertIn(target_key, pages, "navigation must reach a current output")
-                case.assertEqual(pages[target_key].count(f'<a id="{anchor}"></a>'.encode()), 1, target)
+        for target in targets:
+            filename, _, anchor = target.partition("#")
+            case.assertIn(target.encode(), pages[key])
+            linked = ((output / key).parent / unquote(filename)).resolve()
+            target_key = linked.relative_to(output.resolve()).as_posix()
+            case.assertIn(target_key, pages, "navigation must reach a current output")
+            case.assertEqual(pages[target_key].count(f'<a id="{anchor}"></a>'.encode()), 1, target)
     snippets = []
     for page_name, data in pages.items():
         if not page_name.startswith("pages/docs/guide/"):
@@ -44,7 +48,7 @@ def assert_guide_sources_and_links(case, project, pages, output_name=".source-do
 
 
 class GuideNavigation(SelfUseCase):
-    specs = ("SPEC-REN-008", "SPEC-REN-009", "SPEC-BLT-003", "SPEC-CLI-007")
+    specs = ("SPEC-REN-008", "SPEC-REN-009", "SPEC-BLT-003", "SPEC-BLT-008", "SPEC-CLI-007")
 
     def test_scenario(self):
         """默认与自定义输出中的指南链接和重复来源都准确"""

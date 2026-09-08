@@ -184,6 +184,8 @@ code span 使用比路径中最长连续反引号多一个的反引号，至少�
 路径分隔符为 `/`，必要的 `../` 保留。
 路径段内除 ASCII 字母、数字、`-._~` 外的 UTF-8 字节全部以大写 `%HH` 编码。
 空格编码为 `%20`，`#` 编码为 `%23`；片段 `#Lstart_line` 最后附加。
+标准 link 返回的页面 URL 复用相同的实际输出基准与路径编码，具体参数和结果由
+[SPEC-BLT-008](standard-directives.md#spec-blt-008) 拥有。
 
 源文件标题和来源 label 始终使用 root-relative path，输出目录只改变链接 target。
 例如根下 `src/a.rs` 的第 1 行，在默认页面 `.source-down/pages/src/a.rs.md` 中
@@ -240,6 +242,11 @@ layout 在其原顺序位置、前一段 framing 后、后一段来源块前写�
 不满足上述条件时报渲染错误；核心不得通过添加闭合标记修补原文。
 普通 paragraph、list、blockquote 在片段末尾结束；完整的片段内部结构保持原样。
 插件的执行完成顺序不改变插入位置，其结果占据原指令所处的正文位置。
+
+内联调用只用返回的片段字节依序替换标签，不插入 framing；任何片段含 CR 或 LF 都是排版故障，
+不得通过 trim 改变材料。其所属正文的其他字节保持，整个合成正文接受 Markdown 边界校验。
+该正文的 Source、每个内联调用的 Call site 及其 Content source 按出现顺序放在正文前的同一来源区域，
+不能把来源块插入 Markdown 链接或其他行内结构。
 
 <a id="spec-ren-013"></a>
 ## SPEC-REN-013 页面附录与报告排版
@@ -328,16 +335,17 @@ code span 与链接结构，确认每项独立可见且路径字符完整。失�
 来源块与分隔空行是框架文字，不属于原始 payload。空 Markdown 仍有对应页面，正文为空，附录照常处理。
 
 正文各片段的 Source 指向整个原始文档区间；Call site 指向准确标签原字节，CRLF 的 CR 不进入标签范围。
-自身顶层指令执行；被 include 引用的 Markdown 与源码作为最终材料，不再扫描标签。
+自身独立及内联指令按共同语法执行；被 include 引用的 Markdown 与源码作为最终材料，不再扫描标签。
 
 叙述页采用 SPEC-CLI-007 的相同映射：`docs/guide/a.md` 对应 `O/pages/docs/guide/a.md.md`，
 与 `a.rs`、`a.rs.md` 等路径保持区分。目录与章节可使用面向生成页面的普通相对链接及作者显式 HTML 锚点，
-例如：
+也可以在作者链接中使用标准 URL 指令：
 
 ```markdown
-[下一章](next.md.md#next)
+[下一章]({% link "docs/guide/next.md" %}#next)
 ```
 
 这类链接面向生成物，不承诺在原始 Markdown 浏览器中可用；
 不改写普通正文或插件正文的链接，不自动生成导航、补选目标页面或借用旧输出判断本轮目标存在。
-作者负责选择全部目标输入并维护唯一锚点；导航是否可用须在本轮发布结果中检查。
+作者负责选择全部目标输入。标准 link 按 [SPEC-BLT-008](standard-directives.md#spec-blt-008)
+检查本轮目标页面；作者自写的片段由作者维护，核心原样保留且不校验。

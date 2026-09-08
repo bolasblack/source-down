@@ -19,4 +19,4 @@
 每个所选文件对应一个页面。三章讲解分别引用 source、engine 与 render，不要求读者按目录中的源码顺序阅读。
 链接到的是这一次展示的锚点；include 的同名下标只表示当前材料顺序，两者各有用途。
 
-[回看路由片段](expanding-directives.md.md#directive-routing) · [返回目录](index.md.md#source-down-book)
+[回看路由片段]({% link "docs/guide/expanding-directives.md" %}#directive-routing) · [返回目录]({% link "docs/guide/index.md" %}#source-down-book)

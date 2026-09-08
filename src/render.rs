@@ -102,42 +102,46 @@ pub fn render(
                 write!(output, "{fence}\n\n").expect("writing a String");
             }
             SegmentKind::Prose => {
-                let directives = crate::directives::extract(segment, document.source.as_ref())?;
-                let mut end = 0;
-                for directive in directives {
-                    prose(
-                        &mut output,
-                        &segment.text[end..directive.range.start],
-                        &segment.span,
-                        root,
-                        output_base,
-                    )?;
-                    let expansion =
-                        expansions
-                            .get(&directive.source.start_byte)
-                            .ok_or_else(|| {
-                                Error::new(format!(
-                                    "{}: byte {}: missing expansion",
-                                    path, directive.source.start_byte
-                                ))
-                            })?;
-                    source_line(
-                        &mut output,
-                        "Call site",
-                        &directive.source,
-                        root,
-                        output_base,
-                    )?;
-                    content(&mut output, expansion, true, root, output_base)?;
-                    end = directive.range.end;
+                for part in crate::prose::parts(segment, &document.source, expansions)? {
+                    match part {
+                        crate::prose::Part::Block { source, expansion } => {
+                            source_line(&mut output, "Call site", &source, root, output_base)?;
+                            content(&mut output, expansion, true, root, output_base)?;
+                        }
+                        crate::prose::Part::Text(text) if text.calls.is_empty() => {
+                            prose(&mut output, &text.body, &segment.span, root, output_base)?;
+                        }
+                        crate::prose::Part::Text(text) => {
+                            validate_markdown(&text.body)?;
+                            source_line(&mut output, "Source", &segment.span, root, output_base)?;
+                            for call in text.calls {
+                                output.push_str(METADATA_SEPARATOR);
+                                source_line(
+                                    &mut output,
+                                    "Call site",
+                                    &call.source,
+                                    root,
+                                    output_base,
+                                )?;
+                                for origin in
+                                    call.expansion.iter().flat_map(|fragment| &fragment.sources)
+                                {
+                                    output.push_str(METADATA_SEPARATOR);
+                                    source_line(
+                                        &mut output,
+                                        "Content source",
+                                        origin,
+                                        root,
+                                        output_base,
+                                    )?;
+                                }
+                            }
+                            output.push_str("\n\n");
+                            output.push_str(&text.body);
+                            output.push_str("\n\n");
+                        }
+                    }
                 }
-                prose(
-                    &mut output,
-                    &segment.text[end..],
-                    &segment.span,
-                    root,
-                    output_base,
-                )?;
             }
         }
     }
@@ -370,7 +374,18 @@ fn source_line(
         "{}:L{}-L{}",
         span.path, span.start_line, span.end_line
     ));
-    let target = relative_path(&absolute(base)?, &absolute(&root.join(&span.path))?)?;
+    let url = relative_url(base, &root.join(&span.path))?;
+    write!(
+        output,
+        "> **{label}**: [{display}]({url}#L{}) · bytes [{},{})",
+        span.start_line, span.start_byte, span.end_byte
+    )
+    .expect("writing a String");
+    Ok(())
+}
+
+pub(crate) fn relative_url(base: &Path, target: &Path) -> Result<String> {
+    let target = relative_path(&absolute(base)?, &absolute(target)?)?;
     let mut url = String::new();
     for byte in target.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/') {
@@ -379,13 +394,7 @@ fn source_line(
             write!(url, "%{byte:02X}").expect("writing a String");
         }
     }
-    write!(
-        output,
-        "> **{label}**: [{display}]({url}#L{}) · bytes [{},{})",
-        span.start_line, span.start_byte, span.end_byte
-    )
-    .expect("writing a String");
-    Ok(())
+    Ok(url)
 }
 
 fn absolute(path: &Path) -> Result<PathBuf> {

@@ -295,3 +295,18 @@ fn prepare(
     reject_output_type(target)?;
     Ok(temporary)
 }
+/// The final destinations are shared by publication and standard navigation.
+pub(crate) fn page_path(output_root: &std::path::Path, input: &str) -> std::path::PathBuf {
+    output_root.join("pages").join(format!("{input}.md"))
+}
+
+pub(crate) fn report_path(
+    output_root: &std::path::Path,
+    plugin: &str,
+    name: &str,
+) -> std::path::PathBuf {
+    output_root
+        .join("reports")
+        .join(plugin)
+        .join(format!("{name}.md"))
+}

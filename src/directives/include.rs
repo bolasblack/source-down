@@ -12,7 +12,12 @@ pub(super) struct Include {
 
 // {% spec "blt-003" %}
 impl ContentOperation for Include {
-    fn call(&mut self, arguments: &Arguments, sources: &mut SourceStore) -> OperationOutput {
+    fn call(
+        &mut self,
+        arguments: &Arguments,
+        sources: &mut SourceStore,
+        _context: &crate::navigation::Context<'_>,
+    ) -> OperationOutput {
         let mut dependencies = Vec::new();
         let content = (|| {
             let path = parameters(arguments, "include", &["id", "lines"])?;
@@ -88,6 +93,7 @@ impl ContentOperation for Include {
         OperationOutput {
             content,
             dependencies,
+            navigation: Vec::new(),
         }
     }
 }

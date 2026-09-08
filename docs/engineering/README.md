@@ -4,6 +4,7 @@ This document explains how to implement and verify the specifications. Product r
 The project has a buildable Rust CLI, built-in plugins, an external plugin protocol, and tests at real boundaries. [.mise.toml](../../.mise.toml) defines the acceptance tasks; measured results are recorded in [release acceptance](verification.md), [persistent plugin acceptance](persistent-plugins-verification.md), [unified include and authored Markdown acceptance](unified-include-verification.md), and [plugin content composition acceptance](plugin-composition-verification.md).
 
 The current include parameter surface is checked in [include selection acceptance](include-selection-verification.md).
+The URL-only link operation and cross-language inline placement are checked in [link acceptance](link-verification.md).
 Search contracts, real boundary evidence, predeclared queries and measurement budgets are tracked in [search acceptance](search-verification.md).
 The current default snapshot publication, short handles and direct file reads are checked in [CLI and file-read acceptance](search-cli-verification.md).
 The [readable E2E contract](e2e.md), [migration ledger](e2e-migration.md) and
@@ -114,3 +115,7 @@ relative links, and agreement between plugin JSON examples and field tables. AGD
 `CLAUDE_PROJECT_DIR` to the new repository root when running them.
 
 The [authored guide](../guide/index.md) is included in the complete review task. Its links target generated chapter filenames and explicit display anchors. The readable `self_use` and `search` cases verify these targets against the current output set under both default and custom output roots, check repeated source provenance, and mutate referenced declarations in temporary projects. `tools/acceptance.py` discovers and runs the preserved case copy; `mise run acceptance` additionally renders its results and scenarios to a unique `.source-down/e2e/runs/<run-id>/reading` directory.
+
+`directives` routes built-in requests into the same per-round standard evaluator used by project delegation. `navigation` owns the selected-page catalog and the publication eligibility of returned page URLs; it does not inspect author fragments. `prose` substitutes inline and standalone calls for both rendering and indexing, retaining mappings only for actual source bytes. Inline source annotations precede the surrounding prose. The authored guide uses standard URL calls inside ordinary Markdown links across all chapter pages.
+
+Static documentation lint checks literal destinations. Destinations containing directive expressions are verified through generation and the readable acceptance cases, which assert the final URL bytes and actual output targets.

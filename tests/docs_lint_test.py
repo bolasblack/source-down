@@ -35,13 +35,19 @@ class DocumentationLintTest(unittest.TestCase):
 
             guide = root / "docs/guide"
             guide.mkdir()
-            (guide / "index.md").write_text("[Next](next.md.md#chapter)\n")
+            navigation = '[Next]({% link "docs/guide/next.md" %}#chapter)\n'
+            (guide / "index.md").write_text(navigation)
             (guide / "next.md").write_text('<a id="chapter"></a>\n# Chapter\n')
             result = check()
             self.assertEqual(result.returncode, 0, result.stderr)
+            # Generated targets and author fragments are checked by guide E2E acceptance.
             (guide / "next.md").write_text("# Missing explicit anchor\n")
-            self.assertNotEqual(check().returncode, 0)
-            (guide / "next.md").write_text('<a id="chapter"></a>\n# Chapter\n')
+            self.assertEqual(check().returncode, 0)
+            (guide / "index.md").write_text("[Missing](not-present.md)\n")
+            invalid = check()
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertIn("broken local link not-present.md", invalid.stderr)
+            (guide / "index.md").write_text(navigation)
             for body in ("See SPEC-MOD-001.\n",
                          "[Product](../../docs/specs/model.md#spec-mod-001)\n",
                          "```text\nSPEC-MOD-001\n```\n"):

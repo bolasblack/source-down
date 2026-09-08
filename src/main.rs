@@ -10,7 +10,7 @@ use std::path::PathBuf;
     about = "Weave authored Markdown, source comments, and code into traceable pages"
 )]
 #[command(
-    after_help = format!("{}\nMarkdown: .md narrative inputs. Built-in: include (id, lines).\nExit codes: 0 success, 1 generation error, 2 usage/configuration error, 130 cancelled.", source_down::lang::help())
+    after_help = format!("{}\nMarkdown: .md narrative inputs. Built-in: include (id, lines), link (path).\nExit codes: 0 success, 1 generation error, 2 usage/configuration error, 130 cancelled.", source_down::lang::help())
 )]
 struct Cli {
     #[command(subcommand)]

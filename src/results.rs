@@ -1,5 +1,10 @@
 //! Validate complete descriptions, then evaluate their ordered content before publication.
-use crate::{directives, model::*, render};
+use crate::{
+    directives,
+    model::*,
+    navigation::{Context, Pages},
+    publication, render,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -213,6 +218,7 @@ pub(crate) struct Evaluated {
     pub reports: BTreeMap<String, Expansion>,
     pub diagnostics: Vec<(Severity, String)>,
     pub dependencies: Vec<Dependency>,
+    pub navigation: Vec<crate::navigation::Usage>,
     pub protected: BTreeSet<PathBuf>,
 }
 
@@ -223,6 +229,7 @@ pub(crate) fn evaluate(
     output: PluginOutput,
     operations: &mut directives::StandardOperations,
     sources: &mut SourceStore,
+    pages: &Pages,
     check: &impl Fn() -> Result<()>,
 ) -> Result<Evaluated> {
     let mut evaluated = Evaluated {
@@ -231,6 +238,7 @@ pub(crate) fn evaluate(
         reports: BTreeMap::new(),
         diagnostics: Vec::new(),
         dependencies: output.dependencies,
+        navigation: Vec::new(),
         protected: BTreeSet::new(),
     };
     let mut results: BTreeMap<_, _> = output
@@ -249,9 +257,15 @@ pub(crate) fn evaluate(
             PluginResult::Ok { content, .. } => evaluate_content(
                 content,
                 &location,
+                &Context {
+                    pages,
+                    output: pages.get(&request.source.path).unwrap().into(),
+                    parent: Some(&request.source),
+                    position: crate::navigation::Position::Main,
+                },
                 operations,
                 sources,
-                &mut evaluated.dependencies,
+                &mut evaluated,
                 check,
             )?
             .map_err(|(code, message)| PluginFailure {
@@ -275,9 +289,15 @@ pub(crate) fn evaluate(
         let blocks = evaluate_content(
             item.content,
             &location,
+            &Context {
+                pages,
+                output: pages.get(&item.page).unwrap().into(),
+                parent: None,
+                position: crate::navigation::Position::Appendix,
+            },
             operations,
             sources,
-            &mut evaluated.dependencies,
+            &mut evaluated,
             check,
         )?
         .map_err(|(code, message)| at(&location, Error::new(format!("{code}: {message}"))))?;
@@ -288,9 +308,15 @@ pub(crate) fn evaluate(
         let blocks = evaluate_content(
             content,
             &location,
+            &Context {
+                pages,
+                output: publication::report_path(&pages.output_root, plugin, &name),
+                parent: None,
+                position: crate::navigation::Position::Report,
+            },
             operations,
             sources,
-            &mut evaluated.dependencies,
+            &mut evaluated,
             check,
         )?
         .map_err(|(code, message)| at(&location, Error::new(format!("{code}: {message}"))))?;
@@ -309,9 +335,10 @@ type ContentOutcome = std::result::Result<Expansion, (String, String)>;
 fn evaluate_content(
     content: Content,
     location: &str,
+    context: &Context<'_>,
     operations: &mut directives::StandardOperations,
     sources: &mut SourceStore,
-    dependencies: &mut Vec<Dependency>,
+    evaluated: &mut Evaluated,
     check: &impl Fn() -> Result<()>,
 ) -> Result<ContentOutcome> {
     let nodes = match content {
@@ -332,13 +359,29 @@ fn evaluate_content(
                 directive,
                 arguments,
             } => {
-                let outcome = operations.call(&directive, &arguments, sources);
-                dependencies.extend(outcome.dependencies);
+                let outcome = operations.call(&directive, &arguments, sources, context);
+                evaluated.dependencies.extend(outcome.dependencies);
+                evaluated
+                    .navigation
+                    .extend(outcome.navigation.into_iter().map(|reference| {
+                        crate::navigation::Usage {
+                            reference,
+                            location: node_location.clone(),
+                            position: context.position,
+                        }
+                    }));
                 check()?;
                 match outcome.content {
                     Ok(value) => {
-                        fragment(&value.markdown, &value.sources, true, false, sources, check)
-                            .map_err(|e| at(&node_location, e))?;
+                        fragment(
+                            &value.markdown,
+                            &value.sources,
+                            context.parent.is_some(),
+                            false,
+                            sources,
+                            check,
+                        )
+                        .map_err(|e| at(&node_location, e))?;
                         blocks.push(value);
                     }
                     Err(error) => {

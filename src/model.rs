@@ -246,8 +246,9 @@ pub struct Directive {
     pub name: String,
     pub arguments: Arguments,
     pub source: SourceSpan,
-    /// Whole physical line, including its newline, in the normalized prose.
+    /// Consumed range in normalized prose: a complete block line or an inline tag.
     pub range: Range<usize>,
+    pub inline: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

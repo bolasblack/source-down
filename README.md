@@ -36,6 +36,20 @@ Write directives as template tags, with quoted positional arguments and named ar
 
 `include` accepts a file path and an optional `id` or `lines` selector. Markdown headings and source entities use the same structural paths: array strings are exact names, and numeric indices select same-name siblings in current source order. Each parent must be unique before traversal continues. The file type determines its parser. The include plugin returns complete Markdown, using prose for Markdown material and fenced blocks for source code; project plugins generate their own Markdown. See the [six-language entity rules](docs/specs/entities.md) for declaration ranges and capability limits. Projects can write external plugins in any language. A conflict with a built-in name is a configuration error unless an explicit `override` is declared. See the [directive specification](docs/specs/directives.md) for the full syntax and the [built-in directives](docs/specs/standard-directives.md) for content selection.
 
+`link` accepts one input path and returns only its generated page URL. Use it inside ordinary prose, including a Markdown link:
+
+```markdown
+[Next page]({% link "docs/details.md" %}#anchor)
+```
+
+From `docs/index.md`, this becomes:
+
+```markdown
+[Next page](details.md.md#anchor)
+```
+
+The author owns the label and fragment; `link` accepts no named parameters. All standard directives share the same syntax and semantics across Markdown and the six source languages. Inline results must contain no line breaks; use a standalone directive for block content. Code examples and escaped tags remain literal. The [Rust navigation plugin](examples/navigation-plugin.rs) demonstrates standard calls in page content, appendices and reports.
+
 ## Build and use
 
 The first release acceptance target is Linux x86_64 GNU. [.mise.toml](.mise.toml) pins Rust 1.90.0 (with rustfmt, Clippy, and LLVM tools), Python 3.14.7, Zig 0.15.2, and the coverage tools. Zig provides the C compiler and linker. After installing mise, run these commands from the project root:
@@ -52,12 +66,12 @@ mise run review
 
 Each input gets its own page: `src/queue.mli` becomes `.source-down/pages/src/queue.mli.md`. Plugin reports go to `.source-down/reports/<plugin>/<name>.md`. A Markdown input `docs/guide/index.md` becomes `.source-down/pages/docs/guide/index.md.md`, keeping the authored title and executing its own directives. Use `--output-dir review` to change the output root. Render progress and diagnostics go to stderr.
 
-The render CLI validates a complete round and closes every external plugin before preparing outputs; each file is then replaced atomically. Valid plugin check errors update reports and preserve existing source pages; execution, protocol, source, or preparation failures preserve all existing outputs. Publication failures stop further updates and identify completed paths. Each piece of material includes its source file, line numbers, and byte range so readers can return to the original.
+The render CLI validates a complete round and closes every external plugin before preparing outputs; each file is then replaced atomically. Valid plugin check errors preserve existing source pages and update reports that contain no standard page references; a report with a standard link to an unpublished page prevents publication. Execution, protocol, source, or preparation failures preserve all existing outputs. Publication failures stop further updates and identify completed paths. Each piece of material includes its source file, line numbers, and byte range so readers can return to the original.
 
 An expanded directive has a **Call site** paragraph linking to its position in the source, followed by **Content source** paragraphs linking to the material returned by the plugin.
-Paths appear as inline code inside links, preserving punctuation. The core renders these annotations from each content block's source spans, then places that block's Markdown immediately below them.
+Paths appear as inline code inside links, preserving punctuation. The core renders these annotations from each content block's source spans, then places that block's Markdown immediately below them. Inline calls share the surrounding prose's source area, keeping the resulting Markdown structure intact.
 
-Read the authored [authored guide](docs/guide/index.md), then run `mise run review` and open `.source-down/pages/docs/guide/index.md.md`. Its navigation targets generated pages and explicit display anchors. Included material stays literal: directives inside returned Markdown or quoted source are not executed again.
+Read the [authored guide](docs/guide/index.md), then run `mise run review` and open `.source-down/pages/docs/guide/index.md.md`. Its navigation targets generated pages and explicit display anchors. Included material stays literal: directives inside returned Markdown or quoted source are not executed again.
 
 Build pages and their search snapshot with `source-down render src docs`, then query with
 `source-down search SourceStore --path src`. Pass a returned 11-character handle to

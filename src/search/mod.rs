@@ -1,5 +1,5 @@
 //! Search records come from this round's validated content. SPEC-SRH-001.
-use crate::{directives, model::*};
+use crate::model::*;
 use pulldown_cmark::{Event, Parser, Tag};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -283,6 +283,62 @@ impl Index {
     }
 }
 
+// CommonMark omits paragraph events inside tight list items. Keep their inline runs as leaves.
+fn prose_leaves(
+    text: &str,
+) -> Vec<(
+    Kind,
+    Option<pulldown_cmark::HeadingLevel>,
+    std::ops::Range<usize>,
+)> {
+    let mut leaves = Vec::new();
+    let mut blocks = Vec::new();
+    let mut tight: Option<std::ops::Range<usize>> = None;
+    let flush = |tight: &mut Option<std::ops::Range<usize>>, leaves: &mut Vec<_>| {
+        if let Some(range) = tight.take() {
+            leaves.push((Kind::Prose, None, range));
+        }
+    };
+    for (event, range) in Parser::new(text).into_offset_iter() {
+        match &event {
+            Event::Start(
+                tag @ (Tag::Paragraph
+                | Tag::Heading { .. }
+                | Tag::CodeBlock(_)
+                | Tag::HtmlBlock
+                | Tag::List(_)
+                | Tag::Item
+                | Tag::BlockQuote(_)),
+            ) => {
+                flush(&mut tight, &mut leaves);
+                match tag {
+                    Tag::Paragraph => leaves.push((Kind::Prose, None, range)),
+                    Tag::Heading { level, .. } => leaves.push((Kind::Prose, Some(*level), range)),
+                    Tag::CodeBlock(_) => leaves.push((Kind::Code, None, range)),
+                    _ => {}
+                }
+                blocks.push(tag.to_end());
+            }
+            Event::End(tag) if blocks.last() == Some(tag) => {
+                flush(&mut tight, &mut leaves);
+                blocks.pop();
+            }
+            Event::Rule => flush(&mut tight, &mut leaves),
+            _ if blocks.last() == Some(&pulldown_cmark::TagEnd::Item) => {
+                if let Some(current) = &mut tight {
+                    current.end = current.end.max(range.end);
+                } else {
+                    tight = Some(range);
+                }
+            }
+            _ => {}
+        }
+    }
+    flush(&mut tight, &mut leaves);
+    leaves.sort_by_key(|(_, _, range)| range.start);
+    leaves
+}
+
 #[derive(Default)]
 pub(crate) struct Collector {
     records: BTreeMap<String, Record>,
@@ -433,66 +489,84 @@ impl Collector {
                     at(&titles),
                 ),
                 SegmentKind::Prose => {
-                    let mut start = 0;
-                    for directive in directives::extract(segment, &document.source)? {
-                        self.prose(
-                            document,
-                            segment,
-                            start..directive.range.start,
-                            page,
-                            &mut titles,
-                        )?;
-                        let (plugin, request) = &self.requests
-                            [&(document.source.path.clone(), directive.source.start_byte)];
-                        let mut occurrence = at(&titles);
-                        occurrence.plugin = Some(plugin.clone());
-                        occurrence.call_site = Some(request.source.clone());
-                        occurrence.selector = if plugin == "builtin:include" {
-                            request.arguments.named.get("id").cloned()
-                        } else {
-                            None
-                        };
-                        self.blocks(
-                            Kind::Expansion,
-                            &expansions[&directive.source.start_byte],
-                            occurrence,
-                        );
-                        start = directive.range.end;
+                    for part in crate::prose::parts(segment, &document.source, expansions)? {
+                        match part {
+                            crate::prose::Part::Text(text) => {
+                                self.prose(document, segment, &text, page, &mut titles)?
+                            }
+                            crate::prose::Part::Block { source, expansion } => {
+                                self.expansion(&source, expansion, at(&titles))
+                            }
+                        }
                     }
-                    self.prose(
-                        document,
-                        segment,
-                        start..segment.text.len(),
-                        page,
-                        &mut titles,
-                    )?;
                 }
             }
         }
         Ok(())
     }
 
+    fn expansion(
+        &mut self,
+        source: &SourceSpan,
+        expansion: &Expansion,
+        mut occurrence: Occurrence,
+    ) {
+        let (plugin, request) = &self.requests[&(source.path.clone(), source.start_byte)];
+        occurrence.plugin = Some(plugin.clone());
+        occurrence.call_site = Some(request.source.clone());
+        occurrence.selector = if plugin == "builtin:include" {
+            request.arguments.named.get("id").cloned()
+        } else {
+            None
+        };
+        self.blocks(Kind::Expansion, expansion, occurrence);
+    }
+
+    fn inline(
+        &mut self,
+        call: &crate::prose::Inline<'_>,
+        page: &str,
+        input: &str,
+        titles: &[(u8, String)],
+    ) {
+        self.expansion(
+            &call.source,
+            call.expansion,
+            Occurrence {
+                id: String::new(),
+                page: page.into(),
+                input_path: Some(input.into()),
+                position: 0,
+                title_path: titles.iter().map(|(_, title)| title.clone()).collect(),
+                plugin: None,
+                call_site: None,
+                selector: None,
+            },
+        );
+    }
+
     fn prose(
         &mut self,
         document: &Document,
         segment: &Segment,
-        part: std::ops::Range<usize>,
+        text: &crate::prose::Text<'_>,
         page: &str,
         titles: &mut Vec<(u8, String)>,
     ) -> Result<()> {
-        let raw = &segment.text[part.clone()];
+        let raw = text.body.as_ref();
         let (view, offsets) = crate::render::markdown_view(raw);
         let original = |offset: usize| offsets.as_ref().map_or(offset, |m| m[offset]);
         let sections = crate::markdown::sections(raw);
-        for (event, range) in Parser::new(&view).into_offset_iter() {
-            let (kind, heading) = match event {
-                Event::Start(Tag::Paragraph) => (Kind::Prose, None),
-                Event::Start(Tag::Heading { level, .. }) => (Kind::Prose, Some(level as u8)),
-                Event::Start(Tag::CodeBlock(_)) => (Kind::Code, None),
-                _ => continue,
-            };
+        let mut calls = text.calls.iter().peekable();
+        for (kind, heading, range) in prose_leaves(&view) {
             let range = original(range.start)..original(range.end);
-            if let Some(level) = heading
+            while calls
+                .peek()
+                .is_some_and(|call| call.range.start < range.start)
+            {
+                self.inline(calls.next().unwrap(), page, &document.source.path, titles);
+            }
+            if let Some(level) = heading.map(|level| level as u8)
                 && let Some(section) = sections.iter().find(|s| {
                     s.level == level && s.range.start <= range.start && range.start < s.range.end
                 })
@@ -509,10 +583,16 @@ impl Collector {
             {
                 continue;
             }
-            let start = part.start + range.start;
+            let start = range.start;
             let mut mapping: Vec<Mapping> = vec![];
             for (byte, ch) in body.char_indices() {
-                let source_start = segment.mapping[start + byte];
+                let source_start = match &text.mapping {
+                    Some(mapping) => match mapping[start + byte] {
+                        Some(offset) => offset,
+                        None => continue,
+                    },
+                    None => segment.mapping[text.original.start + start + byte],
+                };
                 let source_end = source_start + ch.len_utf8();
                 if document.source.text.get(source_start..source_end)
                     != Some(&body[byte..byte + ch.len_utf8()])
@@ -551,6 +631,15 @@ impl Collector {
                     selector: None,
                 },
             );
+            while calls
+                .peek()
+                .is_some_and(|call| call.range.start < range.end)
+            {
+                self.inline(calls.next().unwrap(), page, &document.source.path, titles);
+            }
+        }
+        for call in calls {
+            self.inline(call, page, &document.source.path, titles);
         }
         Ok(())
     }

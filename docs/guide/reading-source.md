@@ -15,4 +15,4 @@
 名称路径从文件根出发，引用的是当前声明。增加不同名的声明不会改变这个选择；出现同名声明时，
 作者需要审视歧义并显式选择当前源码顺序中的某一项。
 
-[继续：在讲解中展开材料](expanding-directives.md.md#expanding-directives)
+[继续：在讲解中展开材料]({% link "docs/guide/expanding-directives.md" %}#expanding-directives)

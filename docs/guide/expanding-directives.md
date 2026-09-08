@@ -32,4 +32,4 @@
 
 文字节点和 include 结果都是终值，其中的指令示例不会再次执行。普通作者指令仍遵循项目注册与 override；标准委托始终使用发行版提供的 include。
 
-[回到解析入口](reading-source.md.md#parse-source) · [继续：组成页面](building-pages.md.md#building-pages)
+[回到解析入口]({% link "docs/guide/reading-source.md" %}#parse-source) · [继续：组成页面]({% link "docs/guide/building-pages.md" %}#building-pages)

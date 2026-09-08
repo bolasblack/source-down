@@ -15,6 +15,9 @@ pub fn extract(segment: &Segment, source: &SourceFile) -> Result<Vec<Directive>>
     if segment.mapping.len() != segment.text.len() + 1 || segment.span.path != source.path {
         return Err(Error::new("invalid prose source mapping"));
     }
+    if !segment.text.contains("{%") {
+        return Ok(Vec::new());
+    }
     let mut found = Vec::new();
     let mut offset = 0;
     while let Some((line, indent)) = next_tag_line(&segment.text[offset..]) {
@@ -43,8 +46,18 @@ pub fn extract(segment: &Segment, source: &SourceFile) -> Result<Vec<Directive>>
             arguments,
             source: source.span(segment.mapping[start], segment.mapping[stop - 1] + 1)?,
             range,
+            inline: false,
         });
     }
+    let mut inline = Vec::new();
+    let mut start = 0;
+    for block in &found {
+        inline.extend(inline_tags(segment, source, start..block.range.start)?);
+        start = block.range.end;
+    }
+    inline.extend(inline_tags(segment, source, start..segment.text.len())?);
+    found.extend(inline);
+    found.sort_by_key(|directive| directive.range.start);
     Ok(found)
 }
 
@@ -68,7 +81,12 @@ fn next_tag_line(text: &str) -> Option<(Range<usize>, usize)> {
                         let line = &text[start..end];
                         let indent = line.bytes().take_while(|&b| b == b' ').count();
                         if indent <= 3 && line[indent..].starts_with("{%") {
-                            return Some((start..end, indent));
+                            let line = line.trim_end_matches(['\r', '\n']);
+                            if parse_tag(&line[indent..]).map_or(true, |(_, _, stop)| {
+                                line[indent + stop..].trim_matches([' ', '\t']).is_empty()
+                            }) {
+                                return Some((start..end, indent));
+                            }
                         }
                         start = end;
                     }
@@ -80,6 +98,109 @@ fn next_tag_line(text: &str) -> Option<(Range<usize>, usize)> {
         }
     }
     None
+}
+
+// Tags are opaque to the surrounding Markdown; code and HTML still own literal examples.
+fn inline_tags(
+    segment: &Segment,
+    source: &SourceFile,
+    part: Range<usize>,
+) -> Result<Vec<Directive>> {
+    let text = &segment.text[part.clone()];
+    let mut candidates = Vec::new();
+    let mut masked = text.as_bytes().to_vec();
+    let mut cursor = 0;
+    while let Some(relative) = text[cursor..].find("{%") {
+        let start = cursor + relative;
+        cursor = start + 2;
+        if text[..start]
+            .bytes()
+            .rev()
+            .take_while(|b| *b == b'\\')
+            .count()
+            % 2
+            == 1
+        {
+            continue;
+        }
+        let end = text[start..].find('\n').map_or(text.len(), |i| start + i);
+        let result = parse_tag(text[start..end].trim_end_matches('\r'));
+        if let Ok((_, _, length)) = &result {
+            cursor = start + length;
+            masked[start..cursor].fill(b'x');
+        }
+        candidates.push((start, result));
+    }
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let masked = String::from_utf8(masked).expect("complete UTF-8 tags replaced by ASCII");
+    let (view, offsets) = crate::render::markdown_view(&masked);
+    let mut prose = Vec::new();
+    let mut literal = Vec::new();
+    for (event, range) in Parser::new(&view).into_offset_iter() {
+        let range = offsets
+            .as_ref()
+            .map_or(range.clone(), |map| map[range.start]..map[range.end]);
+        match event {
+            Event::Start(Tag::Paragraph | Tag::Heading { .. } | Tag::Item) => prose.push(range),
+            Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock) => literal.push(range),
+            Event::Code(_) | Event::InlineHtml(_) => literal.push(range),
+            _ => {}
+        }
+    }
+    fn union(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
+        ranges.sort_by_key(|range| range.start);
+        let mut merged: Vec<Range<usize>> = Vec::new();
+        for range in ranges {
+            if let Some(last) = merged.last_mut()
+                && range.start <= last.end
+            {
+                last.end = last.end.max(range.end);
+            } else {
+                merged.push(range);
+            }
+        }
+        merged
+    }
+    let prose = union(prose);
+    let literal = union(literal);
+    let contains = |ranges: &[Range<usize>], offset: usize| {
+        let index = ranges.partition_point(|range| range.end <= offset);
+        ranges
+            .get(index)
+            .is_some_and(|range| range.start <= offset && offset < range.end)
+    };
+    let mut found = Vec::new();
+    for (start, result) in candidates {
+        if !contains(&prose, start) || contains(&literal, start) {
+            continue;
+        }
+        let original = segment.mapping[part.start + start];
+        let (name, arguments, length) = result.map_err(|error| {
+            Error::new(format!(
+                "{}:{}: byte {original}: {}",
+                source.path,
+                1 + source.text.as_bytes()[..original]
+                    .iter()
+                    .filter(|b| **b == b'\n')
+                    .count(),
+                error.message
+            ))
+        })?;
+        let range = part.start + start..part.start + start + length;
+        found.push(Directive {
+            name,
+            arguments,
+            source: source.span(
+                segment.mapping[range.start],
+                segment.mapping[range.end - 1] + 1,
+            )?,
+            range,
+            inline: true,
+        });
+    }
+    Ok(found)
 }
 
 fn whitespace(input: &str, cursor: &mut usize) -> bool {
@@ -118,10 +239,6 @@ fn parse_tag(input: &str) -> Result<(String, Arguments, usize)> {
         if input[cursor..].starts_with("%}") {
             cursor += 2;
             let end = cursor;
-            whitespace(input, &mut cursor);
-            if cursor != input.len() {
-                return Err(Error::new("extra text after directive"));
-            }
             return Ok((name.into(), arguments, end));
         }
         if cursor == input.len() {

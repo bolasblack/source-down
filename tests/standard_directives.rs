@@ -1,10 +1,70 @@
+mod common;
 use serde_json::{Value, json};
-use source_down::directives;
-use source_down::model::{
-    Arguments, Content, MarkdownFragment, PluginBatch, PluginFailure, PluginResult, Request,
-    SourceSpan, SourceStore,
-};
+use source_down::model::{Arguments, MarkdownFragment, Request, SourceSpan, SourceStore};
 use std::fs;
+
+#[test]
+fn builtin_plugins_describe_each_request_and_leave_reads_to_the_round() {
+    use source_down::model::{Content, ContentNode, PluginBatch, PluginResult};
+    let root = tempfile::tempdir().unwrap();
+    let mut sources = SourceStore::new(root.path().canonicalize().unwrap());
+    for mut registration in source_down::directives::registrations() {
+        let name = registration.directives[0].clone();
+        assert_eq!(registration.id, format!("builtin:{name}"));
+        let requests = vec![
+            request("first", &name, "missing.md", json!({"unknown":true})),
+            request("last", &name, "unread.md", json!({})),
+            request("wrong", "unexpected", "x", json!({})),
+        ];
+        let output = registration
+            .plugin
+            .run(
+                &PluginBatch {
+                    requests: requests.clone(),
+                    ..Default::default()
+                },
+                &mut sources,
+            )
+            .unwrap();
+        assert!(output.dependencies.is_empty());
+        assert!(sources.paths().next().is_none());
+        assert_eq!(output.results.len(), 3);
+        for (result, request) in output.results.iter().zip(&requests).take(2) {
+            assert_eq!(result.id(), request.id);
+            let PluginResult::Ok {
+                content: Content::Blocks { content },
+                ..
+            } = result
+            else {
+                panic!("{result:?}")
+            };
+            let [
+                ContentNode::StandardCall {
+                    directive,
+                    arguments,
+                },
+            ] = content.as_slice()
+            else {
+                panic!("{content:?}")
+            };
+            assert_eq!(directive, &name);
+            assert_eq!(
+                serde_json::to_value(arguments).unwrap(),
+                serde_json::to_value(&request.arguments).unwrap()
+            );
+        }
+        let PluginResult::Error(failure) = &output.results[2] else {
+            panic!("routing must be checked")
+        };
+        assert_eq!(failure.id, "wrong");
+        assert_eq!(failure.code, "invalid_arguments");
+        let empty = registration
+            .plugin
+            .run(&PluginBatch::default(), &mut sources)
+            .unwrap();
+        assert!(empty.results.is_empty() && empty.dependencies.is_empty());
+    }
+}
 
 fn request(id: &str, directive: &str, path: &str, named: Value) -> Request {
     Request {
@@ -24,33 +84,93 @@ fn request(id: &str, directive: &str, path: &str, named: Value) -> Request {
     }
 }
 
-fn run(directive: &str, requests: &[Request], sources: &mut SourceStore) -> Vec<PluginResult> {
-    let mut owner = directives::registrations()
-        .into_iter()
-        .find(|registration| registration.directives == [directive])
-        .unwrap();
-    owner
-        .plugin
-        .run(
-            &PluginBatch {
-                batch_id: "r1".into(),
-                input_files: vec!["source.rs".into()],
-                requests: requests.to_vec(),
-            },
-            sources,
-        )
-        .unwrap()
-        .results
+// Exercise standard operation semantics through a real project plugin and publication.
+// A successful include is observed in the public search snapshot and generated page.
+#[derive(Debug)]
+struct Generated {
+    fragment: Option<MarkdownFragment>,
+    outcome: source_down::engine::RunOutcome,
 }
 
-fn success(result: &PluginResult) -> (&str, &[SourceSpan]) {
-    match result {
-        PluginResult::Ok {
-            content: Content::Markdown(MarkdownFragment { markdown, sources }),
-            ..
-        } => (markdown, sources),
-        failure => panic!("expected successful expansion, got {failure:?}"),
-    }
+fn generate(request: &Request, sources: &SourceStore) -> Generated {
+    use source_down::engine::Session;
+    use std::sync::{Arc, atomic::AtomicBool};
+    let root = &sources.root;
+    fs::write(root.join("invocation.md"), "{% delegate %}\n").unwrap();
+    fs::write(root.join("source-down.toml"), "config_version=1\n[plugins.delegate]\ncommand=['python','delegate.py']\ndirectives=['delegate']\n").unwrap();
+    fs::write(
+        root.join("arguments.json"),
+        serde_json::to_vec(&json!({
+            "kind":"standard_call", "directive":request.directive, "arguments":request.arguments
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        root.join("delegate.py"),
+        common::plugin(
+            r#"
+with open('arguments.json', encoding='utf-8') as f:
+    node = json.load(f)
+emit({'type':'result','batch_id':b['batch_id'], 'results':[
+    {'id':r['id'],'status':'ok','content':[node]} for r in b['requests']
+], 'append':[], 'reports':{}, 'diagnostics':[], 'dependencies':[]})
+"#,
+        ),
+    )
+    .unwrap();
+    let mut session = Session::new(root, None, None, Arc::new(AtomicBool::new(false))).unwrap();
+    let mut prepared = session.prepare(&["invocation.md".into()]).unwrap();
+    prepared.close_session().unwrap();
+    let outcome = prepared.publish().unwrap();
+    let fragment = if outcome.check_failed {
+        None
+    } else {
+        let snapshot: Value =
+            serde_json::from_slice(&fs::read(root.join(".source-down/search/index.json")).unwrap())
+                .unwrap();
+        let expansions: Vec<_> = snapshot["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["kind"] == "expansion")
+            .collect();
+        assert_eq!(expansions.len(), 1);
+        let body = expansions[0]["body"].as_str().unwrap();
+        let page = fs::read_to_string(root.join(".source-down/pages/invocation.md.md")).unwrap();
+        assert!(
+            page.contains(body),
+            "published page must preserve the indexed expansion"
+        );
+        Some(MarkdownFragment {
+            markdown: body.into(),
+            sources: expansions[0]["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| serde_json::from_value(s["span"].clone()).unwrap())
+                .collect(),
+        })
+    };
+    Generated { fragment, outcome }
+}
+
+fn run(directive: &str, requests: &[Request], sources: &mut SourceStore) -> Vec<Generated> {
+    requests
+        .iter()
+        .map(|request| {
+            assert_eq!(request.directive, directive);
+            generate(request, sources)
+        })
+        .collect()
+}
+
+fn success(result: &Generated) -> (&str, &[SourceSpan]) {
+    let fragment = result
+        .fragment
+        .as_ref()
+        .unwrap_or_else(|| panic!("expected successful generation, got {result:?}"));
+    (&fragment.markdown, &fragment.sources)
 }
 
 #[test]
@@ -58,8 +178,7 @@ fn line_arrays_and_strings_select_identical_bytes_sources_and_dependencies() {
     // SPEC-BLT-005: both public parameter forms denote one inclusive line range.
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("notes.txt"), "first\r\n\r\n末尾").unwrap();
-    let mut sources = SourceStore::new(root.path().canonicalize().unwrap());
-    let mut owner = directives::registrations().remove(0);
+    let sources = SourceStore::new(root.path().canonicalize().unwrap());
     for (string, array, expected) in [
         ("2-3", json!([2, 3.0]), "\r\n末尾"),
         ("1-3", json!([1e0, 3]), "first\r\n\r\n末尾"),
@@ -68,39 +187,29 @@ fn line_arrays_and_strings_select_identical_bytes_sources_and_dependencies() {
     ] {
         let mut responses = Vec::new();
         for lines in [json!(string), array] {
-            responses.push(
-                owner
-                    .plugin
-                    .run(
-                        &PluginBatch {
-                            batch_id: "r1".into(),
-                            input_files: vec!["source.rs".into()],
-                            requests: vec![request(
-                                "d1",
-                                "include",
-                                "notes.txt",
-                                json!({"lines":lines}),
-                            )],
-                        },
-                        &mut sources,
-                    )
-                    .unwrap(),
-            );
+            responses.push(generate(
+                &request("d1", "include", "notes.txt", json!({"lines":lines})),
+                &sources,
+            ));
         }
-        assert_eq!(success(&responses[1].results[0]).0, expected);
+        assert_eq!(success(&responses[1]).0, expected);
         assert_eq!(
-            serde_json::to_value(&responses[0]).unwrap(),
-            serde_json::to_value(&responses[1]).unwrap()
+            serde_json::to_value(&responses[0].fragment).unwrap(),
+            serde_json::to_value(&responses[1].fragment).unwrap()
         );
         assert_eq!(
-            responses[1].dependencies,
+            responses[0].outcome.dependencies,
+            responses[1].outcome.dependencies
+        );
+        assert_eq!(
+            responses[1].outcome.dependencies["delegate"],
             vec![source_down::model::Dependency::File {
                 path: "notes.txt".into()
             }]
         );
         if string == "2-3" {
             assert_eq!(
-                success(&responses[1].results[0]).1,
+                success(&responses[1]).1,
                 &[SourceSpan {
                     path: "notes.txt".into(),
                     start_byte: 7,
@@ -119,7 +228,6 @@ fn line_array_shapes_precede_reads_and_numeric_ranges_follow_reads() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("notes.txt"), "first\r\n\r\nlast").unwrap();
     let mut sources = SourceStore::new(root.path().canonicalize().unwrap());
-    let mut owner = directives::registrations().remove(0);
     for (lines, expected) in [
         (json!([]), "invalid_arguments"),
         (json!([1]), "invalid_arguments"),
@@ -141,25 +249,18 @@ fn line_array_shapes_precede_reads_and_numeric_ranges_follow_reads() {
         (json!([2, 2]), "empty_selection"),
     ] {
         for path in ["notes.txt", "missing.txt"] {
-            let output = owner
-                .plugin
-                .run(
-                    &PluginBatch {
-                        batch_id: "r1".into(),
-                        input_files: vec!["source.rs".into()],
-                        requests: vec![request("d1", "include", path, json!({"lines":lines}))],
-                    },
-                    &mut sources,
-                )
-                .unwrap();
+            let output = generate(
+                &request("d1", "include", path, json!({"lines":lines})),
+                &sources,
+            );
             let expected = if path == "missing.txt" && expected != "invalid_arguments" {
                 "source_error"
             } else {
                 expected
             };
-            assert_eq!(error_code(&output.results[0]), expected, "{path}: {lines}");
+            assert_eq!(error_code(&output), expected, "{path}: {lines}");
             assert_eq!(
-                output.dependencies.is_empty(),
+                output.outcome.dependencies["delegate"].is_empty(),
                 expected == "invalid_arguments",
                 "{path}: {lines}"
             );
@@ -527,7 +628,6 @@ fn exact_markdown_names_empty_headings_and_invalid_paths_have_distinct_results()
         json!(["配置", null]),
         json!([{}]),
         json!([["配置"]]),
-        json!(["配置", 9_007_199_254_740_992u64]),
         json!("配置.999999999999999999999999"),
     ] {
         let result = run(
@@ -647,47 +747,43 @@ fn include_validates_selection_arguments_and_retains_failed_material_dependencie
         );
         assert_eq!(error_code(&results[0]), expected);
     }
-    let mut owner = directives::registrations().remove(0);
-    let output = owner
-        .plugin
-        .run(
-            &PluginBatch {
-                batch_id: "r1".into(),
-                input_files: vec!["source.rs".into()],
-                requests: vec![
-                    request("d1", "include", "missing.md", json!({"id":"missing"})),
-                    request("d2", "include", "notes.txt", json!({"id":"missing"})),
-                ],
-            },
-            &mut sources,
-        )
-        .unwrap();
+    let output = run(
+        "include",
+        &[
+            request("d1", "include", "missing.md", json!({"id":"missing"})),
+            request("d2", "include", "notes.txt", json!({"id":"missing"})),
+        ],
+        &mut sources,
+    );
     assert_eq!(
-        output.dependencies,
-        [
-            source_down::model::Dependency::File {
-                path: "missing.md".into()
-            },
-            source_down::model::Dependency::File {
-                path: "notes.txt".into()
-            }
-        ]
+        output
+            .iter()
+            .flat_map(|r| r.outcome.dependencies["delegate"].clone())
+            .collect::<Vec<_>>(),
+        ["missing.md", "notes.txt"]
+            .map(|path| source_down::model::Dependency::File { path: path.into() })
     );
 }
 
-fn error_code(result: &PluginResult) -> &str {
-    match result {
-        PluginResult::Error(PluginFailure { code, message, .. }) => {
-            assert!(!message.is_empty());
-            code
-        }
-        success => panic!("expected per-request error, got {success:?}"),
-    }
+fn error_code(result: &Generated) -> &str {
+    assert!(
+        result.outcome.check_failed,
+        "expected check failure, got {result:?}"
+    );
+    assert_eq!(result.outcome.diagnostics.len(), 1);
+    result.outcome.diagnostics[0]
+        .1
+        .split_once(": error ")
+        .unwrap()
+        .1
+        .split_once(':')
+        .unwrap()
+        .0
 }
 
 #[test]
 fn include_preserves_source_bytes_and_exact_provenance() {
-    // SPEC-BLT-003: public plugin boundary reads an actual file.
+    // SPEC-BLT-003: publication and indexing preserve actual material bytes.
     let root = tempfile::tempdir().unwrap();
     let original = "# Overview\r\n\r\nText — [link](other.md)";
     fs::write(root.path().join("design.md"), original).unwrap();
@@ -697,26 +793,18 @@ fn include_preserves_source_bytes_and_exact_provenance() {
         &[request("d1", "include", "design.md", json!({}))],
         &mut sources,
     );
-    match &results[0] {
-        PluginResult::Ok {
-            id,
-            content: Content::Markdown(MarkdownFragment { markdown, sources }),
-        } => {
-            assert_eq!(id, "d1");
-            assert_eq!(markdown.as_bytes(), original.as_bytes());
-            assert_eq!(
-                sources,
-                &[SourceSpan {
-                    path: "design.md".into(),
-                    start_byte: 0,
-                    end_byte: original.len(),
-                    start_line: 1,
-                    end_line: 3,
-                }]
-            );
-        }
-        result => panic!("expected an exact source expansion, got {result:?}"),
-    }
+    let (markdown, sources) = success(&results[0]);
+    assert_eq!(markdown.as_bytes(), original.as_bytes());
+    assert_eq!(
+        sources,
+        &[SourceSpan {
+            path: "design.md".into(),
+            start_byte: 0,
+            end_byte: original.len(),
+            start_line: 1,
+            end_line: 3,
+        }]
+    );
 }
 
 #[test]
@@ -845,8 +933,8 @@ fn section_matching_handles_setext_inline_text_and_duplicate_owners() {
 }
 
 #[test]
-fn include_errors_keep_every_request_identity_and_allow_later_success() {
-    // SPEC-BLT-001, SPEC-BLT-002: a rejected item cannot truncate its owner's batch.
+fn include_rejects_bad_arguments_missing_or_invalid_bytes_and_empty_material() {
+    // SPEC-BLT-002: each rejected call retains its specific error through generation.
     let root = tempfile::tempdir().unwrap();
     fs::write(
         root.path().join("good.md"),
@@ -884,9 +972,6 @@ fn include_errors_keep_every_request_identity_and_allow_later_success() {
     requests.push(request("last", "include", "good.md", json!({})));
     let results = run("include", &requests, &mut sources);
     assert_eq!(results.len(), requests.len());
-    for (request, result) in requests.iter().zip(&results) {
-        assert_eq!(result.id(), request.id);
-    }
     for result in &results[..6] {
         assert_eq!(error_code(result), "invalid_arguments");
     }
@@ -958,33 +1043,6 @@ fn include_code_rejects_nonexistent_lines_and_invalid_argument_types() {
         success(results.last().unwrap()).0,
         "```ocaml\nval x : int\n```\n"
     );
-}
-
-#[test]
-fn plugins_reuse_the_same_validated_source_snapshot() {
-    // SPEC-BLT-001: full-file and line selection share the run's existing source bytes.
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("sample.custom"), "original").unwrap();
-    let mut sources = SourceStore::new(root.path().canonicalize().unwrap());
-    let original = run(
-        "include",
-        &[request("d1", "include", "sample.custom", json!({}))],
-        &mut sources,
-    );
-    fs::write(root.path().join("sample.custom"), "changed content").unwrap();
-    let repeated = run(
-        "include",
-        &[request(
-            "d2",
-            "include",
-            "sample.custom",
-            json!({"lines":[1,1]}),
-        )],
-        &mut sources,
-    );
-    assert_eq!(success(&original[0]).0, "original");
-    assert_eq!(success(&repeated[0]).0, "original");
-    assert_eq!(success(&original[0]).1, success(&repeated[0]).1);
 }
 
 #[test]

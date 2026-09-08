@@ -50,7 +50,7 @@ fn positional_and_named_scalars_preserve_quoted_delimiters_and_types() {
 
 // SPEC-DIR-004: block contexts precede tag parsing; tag parameters precede inline parsing.
 #[test]
-fn markdown_containers_stay_literal_while_tags_interrupt_paragraphs() {
+fn code_and_html_stay_literal_while_tags_expand_in_prose_containers() {
     let text = concat!(
         "```text\n{% hidden 'fenced' %}\n```\n\n",
         "    {% hidden 'indented' %}\n\n",
@@ -63,13 +63,14 @@ fn markdown_containers_stay_literal_while_tags_interrupt_paragraphs() {
     );
     let (segment, source) = prose(text);
     let found = extract(&segment, &source).unwrap();
-    assert_eq!(found.len(), 2);
+    assert_eq!(found.len(), 4);
     assert_eq!(
         found.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
-        ["shown", "shown"]
+        ["hidden", "hidden", "shown", "shown"]
     );
-    assert_eq!(found[0].arguments.positional, [json!("first `")]);
-    assert_eq!(found[1].arguments.positional, [json!("second `")]);
+    assert!(found[0].inline && found[1].inline);
+    assert_eq!(found[2].arguments.positional, [json!("first `")]);
+    assert_eq!(found[3].arguments.positional, [json!("second `")]);
 }
 
 // SPEC-DIR-003: correctly rounded binary64 values, independently checked bit patterns.
@@ -128,8 +129,6 @@ fn malformed_tags_fail_with_original_location_instead_of_becoming_prose() {
         r#"{% note '\n' %}"#,
         "{% note 'open %}",
         "{% note \"open %}",
-        "{% note %} trailing",
-        "{% note %}{% note %}",
         "{% note 'one''two' %}",
         "{% note dotted.key=1 %}",
         "{% note key=1key=2 %}",
@@ -166,14 +165,11 @@ fn quoted_escapes_and_scalar_boundaries_are_data() {
 
 // SPEC-DIR-004: extended leaf blocks establish subsequent Markdown context.
 #[test]
-fn block_rules_override_cross_line_code_spans_and_keep_lazy_containers_literal() {
+fn block_rules_override_cross_line_code_spans() {
     for text in [
         "`\n{% overview %}\n`\n",
         "{% overview %}\n---\n",
         "{% overview %}\n<custom>\n{% hidden %}\n",
-        "- lazy list\n{% hidden %}\n\n{% overview %}\n",
-        "> lazy quote\n{% hidden %}\n\n{% overview %}\n",
-        "# {% hidden %}\n\n{% overview %}\n",
     ] {
         let (segment, source) = prose(text);
         let found = extract(&segment, &source).unwrap();
@@ -212,4 +208,33 @@ fn commonmark_cr_fences_do_not_hide_a_following_physical_lf_directive_line() {
         &source.text[found[0].source.start_byte..found[0].source.end_byte],
         "{% shown %}"
     );
+}
+
+#[test]
+fn inline_tags_preserve_prefix_suffix_and_multiple_calls() {
+    for text in [
+        "{% note %} trailing",
+        "{% note %}{% note %}",
+        "- {% note %}",
+        "> {% note %}",
+        "# {% note %}",
+        "- lazy list\n{% note %}",
+        "> lazy quote\n{% note %}",
+    ] {
+        let (segment, source) = prose(text);
+        let found = extract(&segment, &source).unwrap();
+        assert_eq!(
+            found.len(),
+            if text == "{% note %}{% note %}" { 2 } else { 1 },
+            "{text}"
+        );
+        for directive in found {
+            assert!(directive.inline, "{text}");
+            assert_eq!(&segment.text[directive.range], "{% note %}");
+            assert_eq!(
+                &source.text[directive.source.start_byte..directive.source.end_byte],
+                "{% note %}"
+            );
+        }
+    }
 }

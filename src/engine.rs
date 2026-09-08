@@ -183,6 +183,7 @@ impl Session {
         let mut protected: BTreeSet<_> =
             self.config_sources.paths().map(|p| root.join(p)).collect();
         let files = config::select(&sources, &self.config, paths)?;
+        let page_catalog = crate::navigation::Pages::new(&files, output_root);
         let mut documents = vec![];
         let mut batches: BTreeMap<String, Vec<Request>> = BTreeMap::new();
         let mut next_id = 1;
@@ -226,6 +227,7 @@ impl Session {
         let mut check_failed = false;
         let mut diagnostics = Vec::new();
         let mut dependencies = BTreeMap::new();
+        let mut navigation = Vec::new();
         let mut collection = crate::search::Collector::default();
         for (id, registration) in &mut self.registry {
             self.external.check()?;
@@ -264,20 +266,19 @@ impl Session {
                 output,
                 &mut operations,
                 &mut sources,
+                &page_catalog,
                 &|| self.external.check(),
             )
             .map_err(context)?;
             protected.extend(output.protected);
+            navigation.extend(output.navigation);
             for (severity, message) in output.diagnostics {
                 check_failed |= severity == Severity::Error;
                 diagnostics.push((severity, message));
             }
             dependencies.insert(id.clone(), output.dependencies);
             for (name, fragment) in output.reports {
-                let target = output_root
-                    .join("reports")
-                    .join(id)
-                    .join(format!("{name}.md"));
+                let target = publication::report_path(output_root, id, &name);
                 let markdown =
                     render::report(id, &name, &fragment, &files, root, target.parent().unwrap())?;
                 collection.report(
@@ -304,12 +305,11 @@ impl Session {
                     .insert(request.source.start_byte, blocks);
             }
         }
+        crate::navigation::validate_publication(&navigation, check_failed)?;
         let mut pages = Vec::new();
         for document in documents.iter().filter(|_| !check_failed) {
             self.external.check()?;
-            let target = output_root
-                .join("pages")
-                .join(format!("{}.md", document.source.path));
+            let target = publication::page_path(output_root, &document.source.path);
             collection.document(
                 document,
                 &path_text(target.strip_prefix(root).unwrap())?,

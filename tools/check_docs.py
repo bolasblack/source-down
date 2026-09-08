@@ -48,20 +48,15 @@ def check():
         for line in outside_fences(text):
             for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", line):
                 target = target.strip().strip("<>")
-                if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target):
+                if "{%" in target or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target):
                     continue
                 filename, _, anchor = target.partition("#")
-                guide_page = path.is_relative_to(ROOT / "docs/guide") and filename.endswith(".md.md")
-                # Authored guide links address output pages; acceptance checks the actual published set.
-                if guide_page:
-                    filename = filename[:-3]
                 linked = (path.parent / unquote(filename)).resolve() if filename else path
                 if not linked.exists():
                     errors.append(f"{path.relative_to(ROOT).as_posix()}: broken local link {target}")
                 elif anchor.startswith("spec-") and f'id="{anchor}"' not in linked.read_text():
                     errors.append(f"{path.relative_to(ROOT).as_posix()}: missing anchor {target}")
-                elif guide_page and linked.read_text().count(f'<a id="{anchor}"></a>') != 1:
-                    errors.append(f"{path.relative_to(ROOT).as_posix()}: missing or duplicate guide anchor {target}")
+
     for path in files:
         if path.is_relative_to(ROOT / "docs/specs"):
             for clause in set(re.findall(r"SPEC-[A-Z]+-[0-9]{3}", path.read_text())):

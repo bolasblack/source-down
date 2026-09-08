@@ -56,41 +56,64 @@ class WindowsJob:
                 raise ctypes.WinError(ctypes.get_last_error())
 
 
-def execute(arguments, *, cwd, input, env, timeout, stdout, stderr, record):
-    process, job = None, None
-    command = arguments
-    if os.name == "nt":
-        job = WindowsJob()
-        bootstrap = ("import base64,json,subprocess,sys; p=json.loads(sys.stdin.buffer.readline()); "
-                     "sys.exit(subprocess.run(p['argv'], input=base64.b64decode(p['input']) "
-                     "if p['input'] is not None else None).returncode)")
-        command = [sys.executable, "-c", bootstrap]
-        record["bootstrap_argv"] = command
-        input = (json.dumps({"argv": arguments, "input": base64.b64encode(input).decode("ascii")
-                             if input is not None else None}) + "\n").encode("utf-8")
-    try:
-        process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE,
-                                   stdout=stdout, stderr=stderr, start_new_session=os.name == "posix")
-        record["pid"] = process.pid
-        if job:
-            job.assign(process)
-        process.communicate(input, timeout=timeout)
-        return process.returncode
-    finally:
+class ProcessScope:
+    def __init__(self, arguments, *, cwd, input, env, stdout, stderr, record):
+        self.process, self.job, self.record = None, None, record
+        self.input = input
+        command = arguments
+        if os.name == "nt":
+            self.job = WindowsJob()
+            bootstrap = ("import base64,json,signal,subprocess,sys; "
+                         "signal.signal(signal.SIGBREAK, signal.SIG_IGN); "
+                         "p=json.loads(sys.stdin.buffer.readline()); "
+                         "sys.exit(subprocess.run(p['argv'], input=base64.b64decode(p['input']) "
+                         "if p['input'] is not None else None).returncode)")
+            command = [sys.executable, "-c", bootstrap]
+            record["bootstrap_argv"] = command
+            self.input = (json.dumps({"argv": arguments, "input": base64.b64encode(input).decode("ascii")
+                                     if input is not None else None}) + "\n").encode("utf-8")
+        try:
+            options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {}
+            self.process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE,
+                                            stdout=stdout, stderr=stderr, start_new_session=os.name == "posix", **options)
+            record["pid"] = self.process.pid
+            if self.job:
+                self.job.assign(self.process)
+        except BaseException:
+            self.close()
+            raise
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def interrupt(self):
+        self.process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+
+    def close(self):
         # Log files avoid waiting on an inherited stdout pipe after a parent exits.
         # Cleanup also runs on normal completion to remove any surviving descendants.
-        if job:
-            job.close()
-        if process:
+        if self.job:
+            self.job.close()
+        if self.process:
             if os.name == "posix":
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    os.killpg(self.process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-            elif process.poll() is None:
-                process.kill()
-            process.wait(timeout=5)
-            if process.stdin:
-                process.stdin.close()
-            record["exit_code"] = process.returncode
-        record["cleanup_complete"] = True
+            elif self.process.poll() is None:
+                self.process.kill()
+            self.process.wait(timeout=5)
+            if self.process.stdin:
+                self.process.stdin.close()
+            self.record["exit_code"] = self.process.returncode
+        self.record["cleanup_complete"] = True
+
+
+def execute(arguments, *, cwd, input, env, timeout, stdout, stderr, record):
+    with ProcessScope(arguments, cwd=cwd, input=input, env=env,
+                      stdout=stdout, stderr=stderr, record=record) as scope:
+        scope.process.communicate(scope.input, timeout=timeout)
+        return scope.process.returncode

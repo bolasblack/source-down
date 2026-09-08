@@ -47,6 +47,10 @@ observation cannot manufacture a Windows publication failure. Deliberate file
 locks belong to explicit failure fixtures. A held reader must keep the old file's
 bytes while a new reader sees the completed replacement.
 
+Permission scenarios that lower process credentials place their disposable project
+in the Unix shared temporary directory. They must work with a private inherited
+`TMPDIR` without changing permissions on repository or user-directory ancestors.
+
 Business checks belong in case files. Project-copy and mutant-build preparation
 may be shared; assertions about actual rendering, protocol replies, collisions and
 unchanged output belong to their named scenarios. Each case owns a separate mutable

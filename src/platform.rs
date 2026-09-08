@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::sync::{Arc, atomic::AtomicBool};
 
-pub(crate) use native::{Output, close, file_identity, file_kind, replace_file, wait};
+pub(crate) use native::{
+    Output, close, file_identity, file_kind, file_permissions, open_file_identity, replace_file,
+    wait,
+};
 pub use native::{symlink_dir, symlink_file};
 
 /// Process lifetime as observed by the host, independently of protocol completion.
@@ -197,11 +200,18 @@ mod native {
         let metadata = std::fs::metadata(path)?;
         Ok((metadata.dev(), metadata.ino()))
     }
+    pub(crate) fn open_file_identity(file: &File) -> io::Result<(u64, u64)> {
+        let metadata = file.metadata()?;
+        Ok((metadata.dev(), metadata.ino()))
+    }
     pub(crate) fn file_kind(metadata: &Metadata) -> u32 {
         // S_IFMT is u16 on macOS and u32 on Linux.
         #[allow(clippy::unnecessary_cast)]
         let mask = libc::S_IFMT as u32;
         metadata.mode() & mask
+    }
+    pub(crate) fn file_permissions(metadata: &Metadata) -> u32 {
+        metadata.mode() & 0o7777
     }
     pub(crate) fn close(file: File) -> io::Result<()> {
         // Transfer sole ownership; retrying close could close an unrelated, reused descriptor.
@@ -806,13 +816,18 @@ mod native {
         }
     }
     pub(crate) fn file_identity(path: &Path) -> io::Result<(u64, u64)> {
-        use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+        use std::os::windows::fs::OpenOptionsExt;
         use windows_sys::Win32::Storage::FileSystem::*;
         // Attribute access works for protected inputs and directories without reading their contents.
         let file = File::options()
             .access_mode(FILE_READ_ATTRIBUTES)
             .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
             .open(path)?;
+        open_file_identity(&file)
+    }
+    pub(crate) fn open_file_identity(file: &File) -> io::Result<(u64, u64)> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::*;
         let mut info = BY_HANDLE_FILE_INFORMATION::default();
         if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
             return Err(io::Error::last_os_error());
@@ -824,6 +839,10 @@ mod native {
     }
 
     pub(crate) fn file_kind(metadata: &Metadata) -> u32 {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes()
+    }
+    pub(crate) fn file_permissions(metadata: &Metadata) -> u32 {
         use std::os::windows::fs::MetadataExt;
         metadata.file_attributes()
     }
@@ -887,3 +906,4 @@ mod native {
         }
     }
 }
+pub(crate) mod notifications;

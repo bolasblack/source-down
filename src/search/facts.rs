@@ -1,4 +1,5 @@
 use super::*;
+use crate::filesystem::{self, identity as file_identity};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,12 +18,6 @@ fn identity(root: &Path, path: &str) -> Result<String> {
         return Err(Error::new("source is not a regular file"));
     }
     file_identity(&root.join(path))
-}
-
-fn file_identity(path: &Path) -> Result<String> {
-    let (volume, file) =
-        crate::platform::file_identity(path).map_err(|e| Error::new(e.to_string()))?;
-    Ok(format!("{volume:x}:{file:x}"))
 }
 
 pub(super) fn capture(sources: &SourceStore) -> Result<BTreeMap<String, Fingerprint>> {
@@ -48,11 +43,11 @@ pub(super) fn verify(
 ) -> Result<()> {
     for (path, expected) in expected {
         check()?;
+        identity(root, path)?;
+        let file = filesystem::file(&root.join(path), check)?;
         let actual = Fingerprint {
-            identity: identity(root, path)?,
-            sha256: digest(
-                &std::fs::read(root.join(path)).map_err(|e| Error::new(format!("{path}: {e}")))?,
-            ),
+            identity: file.identity,
+            sha256: file.sha256,
         };
         if &actual != expected {
             return Err(Error::new(format!("source {path} changed")));
@@ -64,7 +59,7 @@ pub(super) fn verify(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct DependencyFact {
-    dependency: Dependency,
+    pub(super) dependency: Dependency,
     resolved: String,
     links: Vec<(String, String)>,
     state: State,
@@ -108,43 +103,39 @@ fn encoded(path: &Path) -> String {
     crate::platform::encoded_path(path)
 }
 
-fn directory(
-    root: &Path,
-    path: &Path,
-    recursive: bool,
-    check: &impl Fn() -> Result<()>,
-) -> Result<Vec<Entry>> {
-    let mut result = vec![];
-    for entry in std::fs::read_dir(path)
-        .map_err(|e| Error::new(format!("directory {}: {e}", path.display())))?
-    {
-        check()?;
-        let entry = entry.map_err(|e| Error::new(e.to_string()))?;
-        let path = entry.path();
-        let meta = std::fs::symlink_metadata(&path).map_err(|e| Error::new(e.to_string()))?;
-        let node = if meta.file_type().is_symlink() {
-            EntryNode::Symlink {
-                target: encoded(&std::fs::read_link(&path).map_err(|e| Error::new(e.to_string()))?),
-            }
-        } else if meta.is_file() {
-            EntryNode::File
-        } else if meta.is_dir() {
-            EntryNode::Directory
-        } else {
-            EntryNode::Other {
-                mode: crate::platform::file_kind(&meta),
-            }
-        };
-        if recursive && meta.is_dir() {
-            result.extend(directory(root, &path, true, check)?);
-        }
-        result.push(Entry {
-            path: encoded(path.strip_prefix(root).unwrap()),
-            node,
-        });
-    }
-    result.sort();
-    Ok(result)
+fn project_state(root: &Path, node: filesystem::Node) -> Result<State> {
+    use filesystem::{EntryNode as NativeEntry, Node};
+    Ok(match node {
+        Node::File(file) => State::File {
+            identity: file.as_ref().map(|f| f.identity.clone()),
+            sha256: file.map(|f| f.sha256),
+        },
+        Node::Directory { entries, .. } => State::Directory {
+            entries: entries.map(|entries| {
+                let mut entries: Vec<_> = entries
+                    .into_iter()
+                    .map(|entry| Entry {
+                        path: encoded(entry.path.strip_prefix(root).unwrap()),
+                        node: match entry.node {
+                            NativeEntry::File => EntryNode::File,
+                            NativeEntry::Directory => EntryNode::Directory,
+                            NativeEntry::Symlink(target) => EntryNode::Symlink {
+                                target: encoded(&target),
+                            },
+                            NativeEntry::Other(mode) => EntryNode::Other { mode },
+                        },
+                    })
+                    .collect();
+                entries.sort();
+                entries
+            }),
+        },
+        Node::Missing(reason) => State::Missing {
+            reason: format!("{reason:?}"),
+        },
+        Node::Other(mode) => State::Other { mode },
+        Node::Error(error) => return Err(error),
+    })
 }
 
 pub(super) fn dependencies(
@@ -157,61 +148,13 @@ pub(super) fn dependencies(
         let mut facts = vec![];
         for dependency in dependencies {
             check()?;
-            let resolved = dependency.resolve_with_links(&sources.root)?;
-            let path = &resolved.path;
-            let relative = path.strip_prefix(&sources.root).unwrap();
-            let state = match std::fs::metadata(path) {
-                Ok(meta)
-                    if meta.is_file() && matches!(dependency, Dependency::Directory { .. }) =>
-                {
-                    State::File {
-                        identity: None,
-                        sha256: None,
-                    }
-                }
-                Ok(meta) if meta.is_file() => {
-                    let bytes = if let Some(file) = sources
-                        .files()
-                        .find(|f| path_text(relative).is_ok_and(|p| p == f.path))
-                    {
-                        std::borrow::Cow::Borrowed(file.text.as_bytes())
-                    } else {
-                        std::borrow::Cow::Owned(std::fs::read(path).map_err(|e| {
-                            Error::new(format!("dependency {}: {e}", path.display()))
-                        })?)
-                    };
-                    State::File {
-                        identity: Some(file_identity(path)?),
-                        sha256: Some(digest(&bytes)),
-                    }
-                }
-                Ok(meta) if meta.is_dir() => State::Directory {
-                    entries: match dependency {
-                        Dependency::Directory { recursive, .. } => {
-                            Some(directory(&sources.root, path, *recursive, check)?)
-                        }
-                        Dependency::File { .. } => None,
-                    },
-                },
-                Ok(meta) => State::Other {
-                    mode: crate::platform::file_kind(&meta),
-                },
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-                    ) =>
-                {
-                    State::Missing {
-                        reason: format!("{:?}", resolved.missing.unwrap_or(e.kind())),
-                    }
-                }
-                Err(e) => return Err(Error::new(format!("dependency {}: {e}", path.display()))),
-            };
+            let fact = filesystem::dependency(sources, dependency, check)?;
+            let relative = fact.resolved.strip_prefix(&sources.root).unwrap();
+            let state = project_state(&sources.root, fact.node)?;
             facts.push(DependencyFact {
                 dependency: dependency.clone(),
                 resolved: encoded(relative),
-                links: resolved
+                links: fact
                     .links
                     .iter()
                     .map(|(path, target)| {
@@ -257,9 +200,7 @@ pub(super) fn verify_outputs(
     for (path, expected) in expected {
         check()?;
         identity(root, path)?;
-        let bytes = std::fs::read(root.join(path))
-            .map_err(|e| Error::new(format!("output {path}: {e}")))?;
-        if digest(&bytes) != *expected {
+        if filesystem::file(&root.join(path), check)?.sha256 != *expected {
             return Err(Error::new(format!("published output {path} changed")));
         }
     }

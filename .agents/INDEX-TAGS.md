@@ -16,3 +16,4 @@ decisions/AGD-010_keep-decisions-self-contained-and-separate-lint.md: #conforman
 decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md: #architecture, #conformance, #self-hosting
 decisions/AGD-012_release-native-platform-artifacts.md: #architecture, #tooling, #conformance
 decisions/AGD-013_readable-e2e-with-one-execution-owner.md: #conformance, #self-hosting, #tooling
+decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md: #architecture, #tooling, #conformance

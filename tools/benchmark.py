@@ -97,6 +97,8 @@ def measure(binary):
                     "maximum_frame_bytes": max(map(int,(root / "frames").read_text().splitlines())) if mode != "none" else 0}
                 report["cases"].append(case)
         report["search"] = measure_search(binary, launcher, Path(temporary))
+    from watch_benchmark import measure as measure_watch
+    report["watch"] = measure_watch(binary, ROOT / ".source-down/watch-benchmark")
     return report
 
 
@@ -168,4 +170,4 @@ if __name__ == "__main__":
     report = measure(args.binary.resolve(strict=True))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
-    print(f"benchmark: PASS (6 generation workloads plus self-use/enlarged search stages and budgets); {args.output}")
+    print(f"benchmark: PASS (6 generation workloads, search/read stages and 6 native/Poll watch workloads); {args.output}")

@@ -24,6 +24,7 @@ libc = "=0.2.177"
 tempfile = "=3.23.0"
 sha2 = "=0.10.9"
 xxhash-rust = { version = "=0.8.15", default-features = false, features = ["xxh64"] }
+notify = "=8.2.0"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "=0.3.18"

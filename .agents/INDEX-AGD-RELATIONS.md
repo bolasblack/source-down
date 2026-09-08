@@ -38,3 +38,6 @@ decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(u)-> decisions/AGD-
 decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(u)-> decisions/AGD-003_use-source-down-for-its-own-review.md
 decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(r)-> decisions/AGD-008_enforce-ninety-percent-test-coverage.md
 decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(r)-> decisions/AGD-010_keep-decisions-self-contained-and-separate-lint.md
+decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md -(r)-> decisions/AGD-002_choose-rust-and-source-range-parsing.md
+decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md -(r)-> decisions/AGD-009_own-persistent-plugin-processes-in-one-session-driver.md
+decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md -(r)-> decisions/AGD-012_release-native-platform-artifacts.md

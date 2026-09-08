@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     pub exit_code: i32,
     pub message: String,
@@ -134,6 +134,8 @@ pub(crate) fn path_text(path: &Path) -> Result<String> {
 pub struct SourceStore {
     pub root: PathBuf,
     files: BTreeMap<String, Arc<SourceFile>>,
+    facts: BTreeMap<String, crate::filesystem::FileFact>,
+    queries: std::cell::RefCell<BTreeMap<PathBuf, crate::filesystem::Fact>>,
 }
 
 impl SourceStore {
@@ -141,6 +143,8 @@ impl SourceStore {
         Self {
             root,
             files: BTreeMap::new(),
+            facts: BTreeMap::new(),
+            queries: Default::default(),
         }
     }
 
@@ -150,7 +154,20 @@ impl SourceStore {
         } else {
             self.root.join(path)
         };
-        let actual = absolute
+        let fact = crate::filesystem::query(
+            self,
+            &absolute,
+            crate::filesystem::QueryKind::Metadata,
+            &|| Ok(()),
+        )?;
+        self.queries
+            .borrow_mut()
+            .insert(absolute.clone(), fact.clone());
+        if let crate::filesystem::Node::Error(error) = fact.node {
+            return Err(error);
+        }
+        let actual = fact
+            .resolved
             .canonicalize()
             .map_err(|e| Error::new(format!("{}: {e}", absolute.display())))?;
         let relative = actual
@@ -166,8 +183,11 @@ impl SourceStore {
         if let Some(file) = self.files.get(&canonical) {
             return Ok(file.clone());
         }
-        let bytes = std::fs::read(self.root.join(&canonical))
-            .map_err(|e| Error::new(format!("{canonical}: {e}")))?;
+        let (bytes, fact) = crate::filesystem::source(&self.root.join(&canonical))?;
+        if let Some(query) = self.queries.borrow_mut().get_mut(&self.root.join(path)) {
+            query.node = crate::filesystem::Node::File(Some(fact.clone()));
+        }
+        self.facts.insert(canonical.clone(), fact);
         let text = String::from_utf8(bytes).map_err(|e| {
             let offset = e.utf8_error().valid_up_to();
             let line = line_number(e.as_bytes(), offset);
@@ -196,6 +216,22 @@ impl SourceStore {
 
     pub(crate) fn files(&self) -> impl Iterator<Item = &SourceFile> {
         self.files.values().map(Arc::as_ref)
+    }
+
+    pub(crate) fn file_fact(&self, path: &str) -> Option<&crate::filesystem::FileFact> {
+        self.facts.get(path)
+    }
+
+    pub(crate) fn facts(&self) -> &BTreeMap<String, crate::filesystem::FileFact> {
+        &self.facts
+    }
+
+    pub(crate) fn queries(&self) -> std::collections::BTreeSet<PathBuf> {
+        self.queries.borrow().keys().cloned().collect()
+    }
+
+    pub(crate) fn query_facts(&self) -> BTreeMap<PathBuf, crate::filesystem::Fact> {
+        self.queries.borrow().clone()
     }
 
     pub fn contains(&self, path: &str) -> bool {
@@ -339,12 +375,6 @@ pub enum Dependency {
     File { path: String },
 }
 
-pub(crate) struct ResolvedDependency {
-    pub path: PathBuf,
-    pub links: Vec<(PathBuf, PathBuf)>,
-    pub missing: Option<std::io::ErrorKind>,
-}
-
 impl Dependency {
     pub fn path(&self) -> &str {
         match self {
@@ -357,87 +387,11 @@ impl Dependency {
         self.resolve_with_links(root).map(|resolved| resolved.path)
     }
 
-    pub(crate) fn resolve_with_links(&self, root: &Path) -> Result<ResolvedDependency> {
-        let path = self.path();
+    pub(crate) fn resolve_with_links(&self, root: &Path) -> Result<crate::filesystem::Resolution> {
         if !matches!(self, Self::Directory { path, .. } if path == ".") {
-            validate_relative_path(path)?;
+            validate_relative_path(self.path())?;
         }
-        let parts = |path: &Path| {
-            path.components()
-                .map(|p| p.as_os_str().to_owned())
-                .collect::<std::collections::VecDeque<_>>()
-        };
-        let mut remaining = parts(Path::new(path));
-        let mut current = root.to_owned();
-        let mut links = 0;
-        let mut observed_links = vec![];
-        let mut missing = None;
-        while let Some(part) = remaining.pop_front() {
-            if part == "." {
-                continue;
-            }
-            if part == ".." {
-                if current == root {
-                    return Err(Error::new(format!(
-                        "dependency {path}: outside project root"
-                    )));
-                }
-                current.pop();
-                continue;
-            }
-            let next = current.join(part);
-            match std::fs::symlink_metadata(&next) {
-                Ok(meta) if meta.file_type().is_symlink() => {
-                    // Linux pathname resolution permits at most 40 symlink traversals.
-                    links += 1;
-                    if links > 40 {
-                        return Err(Error::new(format!(
-                            "dependency {path}: symlink resolution loop"
-                        )));
-                    }
-                    let target = std::fs::read_link(&next)
-                        .map_err(|e| Error::new(format!("dependency {path}: {e}")))?;
-                    observed_links.push((next.clone(), target.clone()));
-                    let target = if target.is_absolute() {
-                        current = root.to_owned();
-                        target.strip_prefix(root).map_err(|_| {
-                            Error::new(format!("dependency {path}: outside project root"))
-                        })?
-                    } else {
-                        &target
-                    };
-                    let mut target_parts = parts(target);
-                    target_parts.append(&mut remaining);
-                    remaining = target_parts;
-                }
-                Ok(meta) => {
-                    // Preserve the blocking node when the host reports its child as missing.
-                    if !meta.is_dir() && !remaining.is_empty() {
-                        missing.get_or_insert(std::io::ErrorKind::NotADirectory);
-                    }
-                    current = next;
-                }
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-                    ) =>
-                {
-                    missing.get_or_insert(error.kind());
-                    current = next;
-                }
-                Err(error) => {
-                    return Err(Error::new(format!(
-                        "dependency {path}: cannot resolve boundary: {error}"
-                    )));
-                }
-            }
-        }
-        Ok(ResolvedDependency {
-            path: current,
-            links: observed_links,
-            missing,
-        })
+        crate::filesystem::resolve(root, Path::new(self.path()), &|| Ok(()))?.require_safe()
     }
 }
 

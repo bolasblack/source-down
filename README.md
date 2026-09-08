@@ -66,6 +66,26 @@ mise run review
 
 Each input gets its own page: `src/queue.mli` becomes `.source-down/pages/src/queue.mli.md`. Plugin reports go to `.source-down/reports/<plugin>/<name>.md`. A Markdown input `docs/guide/index.md` becomes `.source-down/pages/docs/guide/index.md.md`, keeping the authored title and executing its own directives. Use `--output-dir review` to change the output root. Render progress and diagnostics go to stderr.
 
+Use `source-down watch src docs` to keep pages and the search snapshot current while editing.
+It generates immediately, then uses native file notifications; stderr identifies the actual
+backend and each complete round. A newly discovered dependency may require a discarded
+discovery round before the first publication. Healthy plugins stay available across rounds.
+Changes to configuration or external plugin dependencies rebuild the session. Stop with Ctrl+C.
+
+Use `source-down watch src docs --poll` on filesystems that do not reliably send notifications,
+including some network and shared mounts. Native backend resource or I/O failures report the
+reason and switch to content polling. Silence alone does not cause a switch. Polling compares
+complete bytes, including edits that preserve file size and mtime.
+
+Watch preserves previous reading material while waiting for an observable repair after an
+input, configuration, plugin or publication failure. Diagnostics describe the repair scope.
+It observes ordinary project files for first-failure recovery, while skipping `.git`, `target`,
+`node_modules`, `.source-down` and generated trees; explicitly known programs and dependencies
+remain observed across these ordinary exclusions. Repairing disk space or an unobservable
+environment change may require editing an input/configuration or restarting. It only prunes
+pages published by this process or safely adopted from a valid index for the same invocation
+scope; orphaned and manually edited pages are preserved. See [watch acceptance](docs/engineering/watch-verification.md).
+
 The render CLI validates a complete round and closes every external plugin before preparing outputs; each file is then replaced atomically. Valid plugin check errors preserve existing source pages and update reports that contain no standard page references; a report with a standard link to an unpublished page prevents publication. Execution, protocol, source, or preparation failures preserve all existing outputs. Publication failures stop further updates and identify completed paths. Each piece of material includes its source file, line numbers, and byte range so readers can return to the original.
 
 An expanded directive has a **Call site** paragraph linking to its position in the source, followed by **Content source** paragraphs linking to the material returned by the plugin.

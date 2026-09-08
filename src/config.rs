@@ -133,8 +133,12 @@ pub fn load(sources: &mut SourceStore, explicit: Option<&Path>) -> Result<Config
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("source-down.toml"));
     let absolute = sources.root.join(&path);
+    let resolved = crate::filesystem::resolve(&sources.root, &absolute, &|| Ok(()))?
+        .require_safe()
+        .map_err(|e| Error::config(e.message))?;
     if explicit.is_none()
-        && !absolute
+        && !resolved
+            .path
             .try_exists()
             .map_err(|e| Error::config(e.to_string()))?
     {
@@ -284,14 +288,46 @@ pub(crate) fn exclude_outputs(config: &mut Config, root: &Path, output: &Path) {
 
 // {% spec "cli-002" %}
 pub fn select(sources: &SourceStore, config: &Config, paths: &[PathBuf]) -> Result<Vec<String>> {
+    select_checked(sources, config, paths, &|| Ok(()))
+}
+
+pub(crate) fn select_checked(
+    sources: &SourceStore,
+    config: &Config,
+    paths: &[PathBuf],
+    check: &impl Fn() -> Result<()>,
+) -> Result<Vec<String>> {
+    select_observed(sources, config, paths, check, &mut BTreeMap::new())
+}
+
+pub(crate) fn select_observed(
+    sources: &SourceStore,
+    config: &Config,
+    paths: &[PathBuf],
+    check: &impl Fn() -> Result<()>,
+    observed: &mut BTreeMap<PathBuf, crate::filesystem::Fact>,
+) -> Result<Vec<String>> {
+    use crate::filesystem::{self, Entry, EntryNode, Node, QueryKind};
     fn walk(
         sources: &SourceStore,
         config: &Config,
         path: &Path,
         explicit: bool,
         files: &mut BTreeSet<String>,
+        check: &impl Fn() -> Result<()>,
+        observed: &mut BTreeMap<PathBuf, filesystem::Fact>,
     ) -> Result<()> {
-        let actual = path
+        check()?;
+        let mut fact = filesystem::query(sources, path, QueryKind::Metadata, check)?;
+        if let Node::Directory { entries, .. } = &mut fact.node {
+            *entries = Some(vec![]);
+        }
+        observed.insert(path.into(), fact.clone());
+        if let Node::Error(error) = &fact.node {
+            return Err(error.clone());
+        }
+        let actual = fact
+            .resolved
             .canonicalize()
             .map_err(|e| Error::new(format!("{}: {e}", path.display())))?;
         let relative = actual
@@ -302,6 +338,7 @@ pub fn select(sources: &SourceStore, config: &Config, paths: &[PathBuf]) -> Resu
             validate_relative_path(&name)?;
         }
         if excluded(&name, config) {
+            observed.remove(path);
             return if explicit {
                 Err(Error::new(format!("{name}: excluded input")))
             } else {
@@ -315,13 +352,33 @@ pub fn select(sources: &SourceStore, config: &Config, paths: &[PathBuf]) -> Resu
             for entry in
                 std::fs::read_dir(&actual).map_err(|e| Error::new(format!("{name}: {e}")))?
             {
+                check()?;
                 let entry = entry.map_err(|e| Error::new(format!("{name}: {e}")))?;
                 let ty = entry.file_type().map_err(|e| Error::new(e.to_string()))?;
                 if ty.is_symlink() {
                     continue;
                 }
                 if ty.is_dir() || (ty.is_file() && supported(&entry.path())) {
-                    walk(sources, config, &entry.path(), false, files)?;
+                    let entry_path = entry.path();
+                    let relative = path_text(entry_path.strip_prefix(&sources.root).unwrap())?;
+                    if excluded(&relative, config) {
+                        continue;
+                    }
+                    if let Node::Directory {
+                        entries: Some(entries),
+                        ..
+                    } = &mut observed.get_mut(path).unwrap().node
+                    {
+                        entries.push(Entry {
+                            path: entry_path.clone(),
+                            node: if ty.is_dir() {
+                                EntryNode::Directory
+                            } else {
+                                EntryNode::File
+                            },
+                        });
+                    }
+                    walk(sources, config, &entry_path, false, files, check, observed)?;
                 }
             }
         } else if meta.is_file() && supported(&actual) {
@@ -332,11 +389,31 @@ pub fn select(sources: &SourceStore, config: &Config, paths: &[PathBuf]) -> Resu
         Ok(())
     }
     let mut files = BTreeSet::new();
-    for path in paths {
-        walk(sources, config, &sources.root.join(path), true, &mut files)?;
+    let result = (|| {
+        for path in paths {
+            walk(
+                sources,
+                config,
+                &sources.root.join(path),
+                true,
+                &mut files,
+                check,
+                observed,
+            )?;
+        }
+        if files.is_empty() {
+            return Err(Error::new("no supported source files selected"));
+        }
+        Ok(files.into_iter().collect())
+    })();
+    for fact in observed.values_mut() {
+        if let Node::Directory {
+            entries: Some(entries),
+            ..
+        } = &mut fact.node
+        {
+            entries.sort();
+        }
     }
-    if files.is_empty() {
-        return Err(Error::new("no supported source files selected"));
-    }
-    Ok(files.into_iter().collect())
+    result
 }

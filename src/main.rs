@@ -17,6 +17,21 @@ struct Cli {
     command: Commands,
 }
 
+#[derive(clap::Args)]
+struct GenerationArgs {
+    #[arg(required = true, num_args = 1..)]
+    paths: Vec<PathBuf>,
+    /// Project root; all other relative paths use this directory
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+    /// TOML configuration (default: source-down.toml when present)
+    #[arg(long)]
+    config: Option<PathBuf>,
+    /// Output root containing pages/, reports/ and search/ (default: .source-down)
+    #[arg(long)]
+    output_dir: Option<PathBuf>,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Read a snapshot handle, or a current file's entity/section with --id
@@ -68,18 +83,14 @@ enum Commands {
         output_dir: Option<PathBuf>,
     },
     /// Render each source file into its own Markdown page
-    Render {
-        #[arg(required = true, num_args = 1..)]
-        paths: Vec<PathBuf>,
-        /// Project root; all other relative paths use this directory
-        #[arg(long, default_value = ".")]
-        root: PathBuf,
-        /// TOML configuration (default: source-down.toml when present)
+    Render(GenerationArgs),
+    /// Regenerate complete pages as project files change
+    Watch {
+        #[command(flatten)]
+        generation: GenerationArgs,
+        /// Use content polling for filesystems that do not deliver native notifications
         #[arg(long)]
-        config: Option<PathBuf>,
-        /// Output root containing pages/, reports/ and search/ (default: .source-down)
-        #[arg(long)]
-        output_dir: Option<PathBuf>,
+        poll: bool,
     },
 }
 
@@ -155,16 +166,22 @@ fn main() {
             })
             .and_then(|reader| reader.query(&query, path.as_deref(), limit as usize))
             .and_then(|result| source_down::search::print_result(&result, json, &cancelled)),
-        Commands::Render {
-            root,
-            config,
-            paths,
-            output_dir,
-        } => source_down::engine::run(
-            &root,
-            config.as_deref(),
-            &paths,
-            output_dir.as_deref(),
+        Commands::Render(args) => source_down::engine::run(
+            &args.root,
+            args.config.as_deref(),
+            &args.paths,
+            args.output_dir.as_deref(),
+            cancelled,
+        ),
+        Commands::Watch {
+            generation: args,
+            poll,
+        } => source_down::watch::run(
+            &args.root,
+            args.config.as_deref(),
+            &args.paths,
+            args.output_dir.as_deref(),
+            poll,
             cancelled,
         ),
     };

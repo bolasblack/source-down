@@ -29,8 +29,7 @@ class RunContext:
         self.mutants = {}
         self.mutations = []
 
-    def command(self, arguments, *, cwd, input=None, timeout=30, env=None):
-        arguments = [str(argument) for argument in arguments]
+    def command_record(self, arguments, *, cwd, input=None):
         row = {"case_id": self.active_case, "argv": arguments, "cwd": str(cwd),
                "executable": None,
                "started_at": now(), "ended_at": None, "exit_code": None,
@@ -41,6 +40,11 @@ class RunContext:
         if input is not None:
             row["stdin"] = f"logs/command-{len(self.commands):04d}.stdin.bin"
             (self.run / row["stdin"]).write_bytes(input)
+        return row
+
+    def command(self, arguments, *, cwd, input=None, timeout=30, env=None):
+        arguments = [str(argument) for argument in arguments]
+        row = self.command_record(arguments, cwd=cwd, input=input)
         stdout_path, stderr_path = self.run / row["stdout"], self.run / row["stderr"]
         try:
             with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
@@ -54,6 +58,10 @@ class RunContext:
             raise
         finally:
             row["ended_at"] = now()
+
+    def running(self, arguments, *, cwd, env=None):
+        from .continuous import RunningCommand
+        return RunningCommand(self, arguments, cwd=cwd, env=env)
 
 
 class Project:
@@ -88,8 +96,8 @@ class E2ECase(unittest.TestCase):
         return (self.context.run / "tests-e2e/fixtures" / name).read_bytes()
 
     @contextmanager
-    def project(self, files=None):
-        with tempfile.TemporaryDirectory(prefix="source-down-e2e-project-") as temporary:
+    def project(self, files=None, *, parent=None):
+        with tempfile.TemporaryDirectory(prefix="source-down-e2e-project-", dir=parent) as temporary:
             project = Project(self.context, temporary)
             for name, value in (files or {}).items():
                 project.write_bytes(name, value.encode("utf-8") if isinstance(value, str) else value)

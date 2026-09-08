@@ -34,6 +34,7 @@ pub(super) enum Command {
 #[derive(Default)]
 pub(super) struct Status {
     pub error: Option<Error>,
+    pub cleanup_error: Option<Error>,
     pub stderr: BTreeMap<String, Tail>,
 }
 
@@ -447,6 +448,7 @@ pub(super) fn drive(
     for (id, process) in &mut processes {
         let mut shared = status.lock().unwrap();
         if let Err(cleanup) = process.finish(shared.stderr.entry(id.clone()).or_default()) {
+            shared.cleanup_error = Some(cleanup.clone());
             shared.error = Some(match shared.error.take() {
                 Some(error) => Error {
                     exit_code: error.exit_code,

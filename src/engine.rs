@@ -67,9 +67,9 @@ pub(crate) fn validate_config(config: &config::Config) -> Result<()> {
 // {% spec "mod-004" %}
 // {% spec "plg-003" %}
 pub struct Session {
-    root: PathBuf,
+    pub(crate) root: PathBuf,
     config: config::Config,
-    output_root: PathBuf,
+    pub(crate) output_root: PathBuf,
     registry: Registry,
     owners: Owners,
     external: ExternalSession,
@@ -78,7 +78,28 @@ pub struct Session {
     next_batch: u64,
     config_sources: SourceStore,
     config_path: PathBuf,
+    pub(crate) attempt: AttemptFacts,
 }
+
+#[derive(Default)]
+pub(crate) struct AttemptFacts {
+    pub queries: BTreeSet<PathBuf>,
+    pub query_facts: BTreeMap<PathBuf, crate::filesystem::Fact>,
+    pub sources: BTreeMap<String, crate::filesystem::FileFact>,
+    pub dependencies: BTreeMap<String, Vec<Dependency>>,
+    pub facts: BTreeMap<Dependency, Result<crate::filesystem::Fact>>,
+    pub publication: Option<Box<publication::Failure>>,
+}
+
+pub(crate) trait RunObserver {
+    fn check(&self) -> Result<()> {
+        Ok(())
+    }
+    fn failed(&mut self, _facts: &AttemptFacts, _check: &dyn Fn() -> Result<()>) -> Result<()> {
+        Ok(())
+    }
+}
+impl RunObserver for () {}
 
 #[derive(Debug, Clone)]
 pub struct RunOutcome {
@@ -92,9 +113,10 @@ pub struct RunOutcome {
 
 struct RunData {
     protected: BTreeSet<PathBuf>,
-    sources: SourceStore,
     reports: Vec<(PathBuf, String)>,
     pages: Vec<(PathBuf, String)>,
+    removed_pages: Vec<PathBuf>,
+    stale_reports: Vec<PathBuf>,
     index: Option<(PathBuf, String)>,
     outcome: RunOutcome,
 }
@@ -103,6 +125,7 @@ struct RunData {
 // {% spec "mod-002" %}
 pub struct PreparedRun<'a> {
     session: &'a mut Session,
+    sources: SourceStore,
     data: RunData,
 }
 
@@ -137,16 +160,48 @@ impl Session {
             initialized: false,
             ended: false,
             next_batch: 1,
+            attempt: AttemptFacts::default(),
         })
     }
 
     pub fn prepare(&mut self, paths: &[PathBuf]) -> Result<PreparedRun<'_>> {
-        match self.prepare_run(paths) {
+        self.prepare_owned(paths, &BTreeSet::new())
+    }
+
+    pub(crate) fn prepare_owned(
+        &mut self,
+        paths: &[PathBuf],
+        owned: &BTreeSet<PathBuf>,
+    ) -> Result<PreparedRun<'_>> {
+        self.prepare_observed(paths, owned, &mut ())
+    }
+
+    pub(crate) fn prepare_observed(
+        &mut self,
+        paths: &[PathBuf],
+        owned: &BTreeSet<PathBuf>,
+        observer: &mut impl RunObserver,
+    ) -> Result<PreparedRun<'_>> {
+        self.attempt = AttemptFacts::default();
+        let mut sources = SourceStore::new(self.root.clone());
+        let result = self.prepare_run(paths, owned, &mut sources);
+        self.attempt.queries = sources.queries();
+        self.attempt.query_facts = sources.query_facts();
+        self.attempt.sources = sources.facts().clone();
+        match result {
             Ok(data) => Ok(PreparedRun {
                 session: self,
+                sources,
                 data,
             }),
-            Err(error) => {
+            Err(mut error) => {
+                if let Err(observation) =
+                    observer.failed(&self.attempt, &|| self.external.check_cancelled())
+                {
+                    error
+                        .message
+                        .push_str(&format!("; observation: {observation}"));
+                }
                 self.abort();
                 Err(error)
             }
@@ -157,17 +212,52 @@ impl Session {
         self.external.check()
     }
 
+    pub(crate) fn adopt_pages(
+        &self,
+        paths: &[PathBuf],
+        inputs: &BTreeMap<String, crate::filesystem::FileFact>,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<crate::search::Adoption> {
+        let protected = inputs
+            .keys()
+            .map(String::as_str)
+            .chain(self.config_sources.paths())
+            .map(|p| self.root.join(p))
+            .collect();
+        crate::search::adopt_pages(
+            &self.root,
+            &self.config_path,
+            &self.output_root,
+            paths,
+            protected,
+            cancelled,
+        )
+    }
+
+    pub(crate) fn configuration_sources(&self) -> &SourceStore {
+        &self.config_sources
+    }
+
     pub fn close(&mut self) -> Result<()> {
         self.ended = true;
         self.external.close()
     }
 
-    fn abort(&mut self) {
+    pub(crate) fn abort(&mut self) {
         self.ended = true;
         self.external.abort();
     }
 
-    fn prepare_run(&mut self, paths: &[PathBuf]) -> Result<RunData> {
+    pub(crate) fn cleanup_result(&self) -> Result<()> {
+        self.external.cleanup_result()
+    }
+
+    fn prepare_run(
+        &mut self,
+        paths: &[PathBuf],
+        owned: &BTreeSet<PathBuf>,
+        sources: &mut SourceStore,
+    ) -> Result<RunData> {
         if self.ended {
             return Err(Error::new("session is closed"));
         }
@@ -179,10 +269,10 @@ impl Session {
             .ok_or_else(|| Error::new("session batch IDs exhausted"))?;
         let root = &self.root;
         let output_root = &self.output_root;
-        let mut sources = SourceStore::new(root.clone());
         let mut protected: BTreeSet<_> =
             self.config_sources.paths().map(|p| root.join(p)).collect();
-        let files = config::select(&sources, &self.config, paths)?;
+        let files =
+            config::select_checked(sources, &self.config, paths, &|| self.external.check())?;
         let page_catalog = crate::navigation::Pages::new(&files, output_root);
         let mut documents = vec![];
         let mut batches: BTreeMap<String, Vec<Request>> = BTreeMap::new();
@@ -251,11 +341,11 @@ impl Session {
                 ),
             };
             let mut output = match registration {
-                Handler::Builtin(plugin) => plugin.run(&batch, &mut sources).map_err(context)?,
+                Handler::Builtin(plugin) => plugin.run(&batch, sources).map_err(context)?,
                 Handler::External => self.external.run(id, &batch)?,
             };
             protected.extend(
-                crate::results::validate(id, &batch, &mut output, &mut sources, &|| {
+                crate::results::validate(id, &batch, &mut output, sources, &|| {
                     self.external.check()
                 })
                 .map_err(context)?,
@@ -265,11 +355,20 @@ impl Session {
                 &batch,
                 output,
                 &mut operations,
-                &mut sources,
+                sources,
                 &page_catalog,
                 &|| self.external.check(),
             )
             .map_err(context)?;
+            for dependency in &output.dependencies {
+                self.attempt.facts.insert(
+                    dependency.clone(),
+                    crate::filesystem::dependency(sources, dependency, &|| self.external.check()),
+                );
+            }
+            self.attempt
+                .dependencies
+                .insert(id.clone(), output.dependencies.clone());
             protected.extend(output.protected);
             navigation.extend(output.navigation);
             for (severity, message) in output.diagnostics {
@@ -336,6 +435,25 @@ impl Session {
             pages.push((target, markdown));
         }
         self.external.check()?;
+        let removed_pages: Vec<_> = owned
+            .iter()
+            .filter(|path| !check_failed && !pages.iter().any(|(page, _)| page == *path))
+            .cloned()
+            .collect();
+        let stale_reports: Vec<_> = publication::report_files_observed(
+            root,
+            output_root,
+            self.registry.keys().map(String::as_str),
+            &|| self.external.check(),
+        )
+        .map_err(|failure| {
+            let error = failure.error.clone();
+            self.attempt.publication = Some(failure);
+            error
+        })?
+        .into_iter()
+        .filter(|path| !reports.iter().any(|(target, _)| target == path))
+        .collect();
         let index = (!check_failed)
             .then(|| {
                 collection.finish(crate::search::Round {
@@ -345,12 +463,14 @@ impl Session {
                     selections: paths,
                     config: &self.config,
                     config_path: &self.config_path,
-                    sources: &sources,
+                    sources,
                     config_sources: &self.config_sources,
                     dependencies: &dependencies,
                     check: &|| self.external.check(),
                     pages: &pages,
                     reports: &reports,
+                    removed_pages: &removed_pages,
+                    stale_reports: &stale_reports,
                 })
             })
             .transpose()?;
@@ -364,9 +484,10 @@ impl Session {
         };
         Ok(RunData {
             protected,
-            sources,
             reports,
             pages,
+            removed_pages,
+            stale_reports,
             index,
             outcome,
         })
@@ -374,6 +495,13 @@ impl Session {
 }
 
 impl PreparedRun<'_> {
+    pub(crate) fn session(&self) -> &Session {
+        self.session
+    }
+    pub(crate) fn sources(&self) -> &SourceStore {
+        &self.sources
+    }
+
     pub fn outcome(&self) -> &RunOutcome {
         &self.data.outcome
     }
@@ -385,23 +513,48 @@ impl PreparedRun<'_> {
 
     // {% spec "cli-004" %}
     pub fn publish(self) -> Result<RunOutcome> {
+        self.publish_observed().map(|(outcome, _)| outcome)
+    }
+
+    pub(crate) fn publish_observed(self) -> Result<(RunOutcome, publication::Progress)> {
+        self.publish_checked(&mut ())
+    }
+
+    pub(crate) fn publish_checked(
+        self,
+        observer: &mut impl RunObserver,
+    ) -> Result<(RunOutcome, publication::Progress)> {
         let result = publication::publish(
-            &self.data.sources,
-            &self.session.output_root,
-            self.session.registry.keys().map(String::as_str),
+            &self.sources,
             publication::Outputs {
                 reports: &self.data.reports,
                 pages: &self.data.pages,
                 index: self.data.index.as_ref(),
+                removed_pages: &self.data.removed_pages,
+                stale_reports: &self.data.stale_reports,
             },
             &self.data.protected,
-            &|| self.session.external.check(),
+            &|| {
+                self.session.external.check()?;
+                observer.check()
+            },
         );
-        if let Err(error) = result {
-            self.session.abort();
-            return Err(error);
+        match result {
+            Err(failure) => {
+                let mut error = failure.error.clone();
+                self.session.attempt.publication = Some(failure);
+                if let Err(observation) = observer.failed(&self.session.attempt, &|| {
+                    self.session.external.check_cancelled()
+                }) {
+                    error
+                        .message
+                        .push_str(&format!("; observation: {observation}"));
+                }
+                self.session.abort();
+                Err(error)
+            }
+            Ok(progress) => Ok((self.data.outcome, progress)),
         }
-        Ok(self.data.outcome)
     }
 }
 

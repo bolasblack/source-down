@@ -30,6 +30,15 @@ def code_span(value):
 def run(batch, root):
     cache = {}
     dependencies = {}
+    # {% spec "plg-013" %}
+    script = Path(__file__).resolve(strict=True)
+    # Native root spellings can differ (for example Windows extended paths).
+    # Match the actual directory before constructing the protocol-relative path.
+    for parent in script.parents:
+        if parent.samefile(root):
+            path = script.relative_to(parent).as_posix()
+            dependencies[("file", path)] = {"kind": "file", "path": path}
+            break
 
     def material(path):
         (root / path).resolve(strict=False).relative_to(root)

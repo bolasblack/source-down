@@ -97,6 +97,19 @@ impl ExternalSession {
         self.join();
     }
 
+    pub(crate) fn check_cancelled(&self) -> Result<()> {
+        crate::publication::check_cancelled(&self.cancelled)
+    }
+
+    pub(crate) fn cleanup_result(&self) -> Result<()> {
+        self.status
+            .lock()
+            .unwrap()
+            .cleanup_error
+            .clone()
+            .map_or(Ok(()), Err)
+    }
+
     fn join(&mut self) {
         if let Some(worker) = self.worker.take() {
             worker.join().expect("plugin I/O driver panicked");

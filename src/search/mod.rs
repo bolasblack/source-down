@@ -1,8 +1,8 @@
 //! Search records come from this round's validated content. SPEC-SRH-001.
+use crate::filesystem::digest;
 use crate::model::*;
 use pulldown_cmark::{Event, Parser, Tag};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::Path;
 mod facts;
@@ -116,6 +116,8 @@ pub(crate) struct Round<'a> {
     pub check: &'a dyn Fn() -> Result<()>,
     pub pages: &'a [(std::path::PathBuf, String)],
     pub reports: &'a [(std::path::PathBuf, String)],
+    pub removed_pages: &'a [std::path::PathBuf],
+    pub stale_reports: &'a [std::path::PathBuf],
 }
 
 fn relative(root: &Path, path: &Path) -> Result<String> {
@@ -142,10 +144,6 @@ fn canonical<T: Serialize>(value: &T) -> Vec<u8> {
     // serde_json's default map is a BTreeMap, including nested object keys.
     serde_json::to_vec(&serde_json::to_value(value).expect("serializable snapshot"))
         .expect("serializable JSON")
-}
-
-fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
 }
 
 impl Index {
@@ -649,15 +647,12 @@ impl Collector {
         let index_path = round.output.join("search/index.json");
         let mut dependencies =
             facts::dependencies(round.sources, round.dependencies, &|| (round.check)())?;
-        let stale: Vec<_> = crate::publication::report_files(
-            root,
-            round.output,
-            round.report_owners.iter().map(String::as_str),
-            &|| (round.check)(),
-        )?
-        .into_iter()
-        .filter(|path| !round.reports.iter().any(|(target, _)| target == path))
-        .collect();
+        let stale: Vec<_> = round
+            .stale_reports
+            .iter()
+            .chain(round.removed_pages)
+            .cloned()
+            .collect();
         let targets: Vec<_> = round
             .pages
             .iter()
@@ -735,6 +730,88 @@ pub struct Reader {
     snapshot_only: bool,
     cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
     timings: std::cell::Cell<Timings>,
+}
+
+pub(crate) struct Adoption {
+    pub pages: std::collections::BTreeSet<std::path::PathBuf>,
+    pub notices: Vec<String>,
+}
+
+// {% spec "cli-012" %}
+pub(crate) fn adopt_pages(
+    root: &Path,
+    config_path: &Path,
+    output: &Path,
+    selections: &[std::path::PathBuf],
+    mut protected: std::collections::BTreeSet<std::path::PathBuf>,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<Adoption> {
+    let reader = Reader::open(
+        root,
+        Some(config_path),
+        Some(output),
+        true,
+        cancelled.clone(),
+    )?;
+    let manifest = &reader.index.manifest;
+    let normalize =
+        |paths: Vec<String>| paths.into_iter().collect::<std::collections::BTreeSet<_>>();
+    if manifest.output_root != relative(root, output)?
+        || manifest.config_path != relative(root, config_path)?
+        || normalize(manifest.selections.clone())
+            != normalize(
+                selections
+                    .iter()
+                    .map(|p| relative(root, p))
+                    .collect::<Result<_>>()?,
+            )
+    {
+        return Err(Error::new(
+            "existing index has a different invocation scope",
+        ));
+    }
+    protected.extend(
+        manifest
+            .sources
+            .keys()
+            .chain(manifest.config_sources.keys())
+            .map(|p| root.join(p)),
+    );
+    for fact in manifest.dependencies.values().flatten() {
+        if matches!(fact.dependency, Dependency::File { .. }) {
+            protected.insert(root.join(fact.dependency.path()));
+            protected.insert(fact.dependency.resolve(root)?);
+        }
+    }
+    let check = || crate::publication::check_cancelled(&cancelled);
+    let protection = crate::publication::Protection::new(root, &protected, &check)?;
+    let mut adoption = Adoption {
+        pages: Default::default(),
+        notices: vec![],
+    };
+    for input in &manifest.input_files {
+        check()?;
+        let page = crate::publication::page_path(output, input);
+        let name = relative(root, &page)?;
+        if let Err(error) = protection.check(&page) {
+            adoption
+                .notices
+                .push(format!("not adopting {name}: {error}"));
+            continue;
+        }
+        if !page.try_exists().map_err(|e| Error::new(e.to_string()))? {
+            continue;
+        }
+        let file = crate::filesystem::file(&page, &check)?;
+        if manifest.outputs.get(&name) == Some(&file.sha256) {
+            adoption.pages.insert(page);
+        } else {
+            adoption.notices.push(format!(
+                "not adopting {name}: page content differs from the index"
+            ));
+        }
+    }
+    Ok(adoption)
 }
 
 /// Wall times for the public benchmark; current-file verification includes full byte hashing.

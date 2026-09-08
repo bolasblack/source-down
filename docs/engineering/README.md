@@ -5,6 +5,7 @@ The project has a buildable Rust CLI, built-in plugins, an external plugin proto
 
 The current include parameter surface is checked in [include selection acceptance](include-selection-verification.md).
 The URL-only link operation and cross-language inline placement are checked in [link acceptance](link-verification.md).
+Native notification scheduling, explicit content polling, repair windows and page ownership are tracked in [watch acceptance](watch-verification.md).
 Search contracts, real boundary evidence, predeclared queries and measurement budgets are tracked in [search acceptance](search-verification.md).
 The current default snapshot publication, short handles and direct file reads are checked in [CLI and file-read acceptance](search-cli-verification.md).
 The [readable E2E contract](e2e.md), [migration ledger](e2e-migration.md) and
@@ -41,7 +42,15 @@ session.close()?;
 
 Each `RunOutcome` includes its batch identity, plugin-owned dependencies, check status, diagnostics and page/report paths. A valid check failure is an outcome with `check_failed = true`; execution faults return an error and terminate the session. Dropping a prepared result discards it and permits the next round. The render CLI calls `PreparedRun::close_session` before publication, preserving its close-before-publication boundary. File dependencies are validated independently of source text and protect both their query paths and resolved identities from replacement or pruning.
 
-The library interface supplies complete-round execution and dependency facts. Watch scheduling, configuration reload and source-page deletion policies require their own specifications before implementation.
+The library interface supplies complete-round execution and dependency facts. `watch` owns scheduling,
+configuration reload, repair waits and page ownership under [SPEC-CLI-008](../specs/cli.md#spec-cli-008)
+through [SPEC-CLI-012](../specs/cli.md#spec-cli-012). Its observer retains native resources across Session
+replacement; `platform/notifications` supplies bounded hints and native directory subscriptions.
+`watch/observation` collects and compares facts through the shared `filesystem` implementation.
+Only the Poll adapter owns ordinary recovery body scans. Actual replacements, deletions, blocking
+facts and completed progress remain owned by publication; the index is published last.
+[AGD-014](../../.agents/decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md)
+records the backend and collection choices.
 
 ## Adding a language
 

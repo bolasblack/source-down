@@ -1,14 +1,13 @@
 //! The sole owner of plugin children, pipes, protocol phases and bounded diagnostics.
 use super::protocol::{self, HostMessage, PluginMessage};
+use crate::platform::{Child, Interest};
 use crate::{
     config::{ExternalConfig, json_options},
     model::*,
 };
 use std::collections::{BTreeMap, VecDeque};
-use std::io::{Read, Write};
-use std::os::{fd::AsRawFd, unix::process::CommandExt};
 use std::path::PathBuf;
-use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, ExitStatus, Stdio};
+use std::process::{ExitStatus, Stdio};
 use std::sync::{Arc, Mutex, atomic::AtomicBool, mpsc};
 use std::time::{Duration, Instant};
 
@@ -96,9 +95,6 @@ enum Phase {
 }
 struct Process {
     child: Child,
-    stdin: Option<ChildStdin>,
-    stdout: ChildStdout,
-    stderr: ChildStderr,
     out_eof: bool,
     err_eof: bool,
     exit: Option<ExitStatus>,
@@ -106,29 +102,6 @@ struct Process {
     phase: Phase,
     timeout: Duration,
     context: String,
-    armed: bool,
-}
-impl Drop for Process {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
-
-fn nonblocking(pipe: &impl AsRawFd) -> Result<()> {
-    // SAFETY: fcntl operates on an owned live pipe descriptor.
-    let result = unsafe {
-        let flags = libc::fcntl(pipe.as_raw_fd(), libc::F_GETFL);
-        if flags == -1 {
-            -1
-        } else {
-            libc::fcntl(pipe.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK)
-        }
-    };
-    if result == -1 {
-        Err(Error::new(std::io::Error::last_os_error().to_string()))
-    } else {
-        Ok(())
-    }
 }
 fn transient(error: &std::io::Error) -> bool {
     matches!(
@@ -149,25 +122,11 @@ fn exchange(message: &HostMessage, reply: Responder, started: Instant) -> Result
 }
 
 impl Process {
-    fn stop(&mut self) {
-        if self.armed {
-            // SAFETY: spawn establishes a fresh process group owned by this driver.
-            unsafe {
-                libc::kill(-(self.child.id() as i32), libc::SIGKILL);
-            }
-            let _ = self.child.wait();
-            self.armed = false;
-        }
-    }
-
-    fn finish(&mut self, tail: &mut Tail) {
-        self.stop();
+    fn finish(&mut self, tail: &mut Tail) -> Result<()> {
+        let stopped = self.child.stop();
         // SPEC-PLG-008: retain buffered diagnostics after stopping their writers.
-        // Nonblocking reads also bound cleanup when a pipe remains open elsewhere.
-        let mut bytes = [0; 65536];
-        while let Ok(n @ 1..) = self.stderr.read(&mut bytes) {
-            tail.push(&bytes[..n]);
-        }
+        self.child.drain_stderr(|bytes| tail.push(bytes));
+        stopped.map_err(|e| Error::new(format!("process cleanup: {e}")))
     }
 
     fn spawn(id: &str, root: PathBuf, config: ExternalConfig, reply: Responder) -> Result<Self> {
@@ -177,30 +136,19 @@ impl Process {
             .first()
             .filter(|p| !p.is_empty())
             .ok_or_else(|| Error::new("empty plugin command"))?;
-        let program = if program.contains('/') {
-            root.join(program)
-        } else {
-            program.into()
-        };
-        let mut child = std::process::Command::new(program)
+        let program = crate::platform::program_path(&root, program);
+        let mut command = std::process::Command::new(program);
+        command
             .args(&config.command[1..])
             .current_dir(&root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .process_group(0)
-            .spawn()
-            .map_err(|e| Error::new(format!("start failed: {e}")))?;
+            .stderr(Stdio::piped());
+        let child =
+            Child::spawn(&mut command).map_err(|e| Error::new(format!("start failed: {e}")))?;
         let started = Instant::now();
-        let stdin = child.stdin.take();
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
-        // Establish the process guard before any fallible pipe or message setup.
         let mut process = Self {
             child,
-            stdin,
-            stdout,
-            stderr,
             out_eof: false,
             err_eof: false,
             exit: None,
@@ -208,11 +156,7 @@ impl Process {
             phase: Phase::Idle,
             timeout: Duration::from_millis(config.timeout_ms),
             context: "initialize".into(),
-            armed: true,
         };
-        nonblocking(process.stdin.as_ref().unwrap())?;
-        nonblocking(&process.stdout)?;
-        nonblocking(&process.stderr)?;
         process.phase = Phase::Initializing(exchange(
             &HostMessage::Initialize {
                 protocol_version: 1,
@@ -316,7 +260,7 @@ impl Process {
         let mut bytes = [0; 65536];
         // One bounded read/write per turn lets every plugin and its deadline progress.
         if !self.err_eof {
-            match self.stderr.read(&mut bytes) {
+            match self.child.read_stderr(&mut bytes) {
                 Ok(0) => self.err_eof = true,
                 Ok(n) => tail.push(&bytes[..n]),
                 Err(e) if transient(&e) => {}
@@ -324,7 +268,7 @@ impl Process {
             }
         }
         if !self.out_eof {
-            match self.stdout.read(&mut bytes) {
+            match self.child.read_stdout(&mut bytes) {
                 Ok(0) => self.out_eof = true,
                 Ok(n) => self.receive(&bytes[..n])?,
                 Err(e) if transient(&e) => {}
@@ -344,7 +288,7 @@ impl Process {
                 )));
             }
             if self.out_eof && self.err_eof {
-                self.armed = false;
+                self.child.complete();
                 self.phase = Phase::Closed;
                 return Ok(());
             }
@@ -372,10 +316,8 @@ impl Process {
                 if e.written < e.input.len() =>
             {
                 match self
-                    .stdin
-                    .as_mut()
-                    .unwrap()
-                    .write(&e.input[e.written..e.input.len().min(e.written + 65536)])
+                    .child
+                    .write_stdin(&e.input[e.written..e.input.len().min(e.written + 65536)])
                 {
                     Ok(0) => {
                         return Err(Error::new("plugin closed stdin before request completed"));
@@ -401,23 +343,12 @@ impl Process {
         }
     }
 
-    fn polls(&self, polls: &mut Vec<libc::pollfd>) {
-        let mut add = |fd, events| {
-            polls.push(libc::pollfd {
-                fd,
-                events,
-                revents: 0,
-            })
-        };
-        if !self.out_eof {
-            add(self.stdout.as_raw_fd(), libc::POLLIN);
-        }
-        if !self.err_eof {
-            add(self.stderr.as_raw_fd(), libc::POLLIN);
-        }
-        if matches!(&self.phase, Phase::Initializing(e) | Phase::Running { exchange: e, .. } if e.written < e.input.len())
-        {
-            add(self.stdin.as_ref().unwrap().as_raw_fd(), libc::POLLOUT);
+    fn interest(&self) -> Interest<'_> {
+        Interest {
+            child: &self.child,
+            stdout: !self.out_eof,
+            stderr: !self.err_eof,
+            stdin: matches!(&self.phase, Phase::Initializing(e) | Phase::Running { exchange: e, .. } if e.written < e.input.len()),
         }
     }
 }
@@ -449,7 +380,13 @@ pub(super) fn drive(
                 let mut shared = status.lock().unwrap();
                 let tail = shared.stderr.entry(id.clone()).or_default();
                 if let Err(error) = process.pump(tail) {
-                    process.finish(tail);
+                    let error = match process.finish(tail) {
+                        Ok(()) => error,
+                        Err(cleanup) => Error {
+                            exit_code: error.exit_code,
+                            message: format!("{error}; {cleanup}"),
+                        },
+                    };
                     return Err(Error {
                         exit_code: error.exit_code,
                         message: format!(
@@ -492,27 +429,15 @@ pub(super) fn drive(
                     for process in processes.values_mut() {
                         process.phase = Phase::Closing(Instant::now());
                         process.context = "closing".into();
-                        process.stdin.take();
+                        process.child.close_stdin();
                     }
                     closing = Some(reply);
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
             }
-            let mut polls = Vec::new();
-            for process in processes.values() {
-                process.polls(&mut polls);
-            }
-            // SAFETY: all descriptors belong to this thread. A short poll also observes
-            // command arrival, cancellation and exits without imposing an idle deadline.
-            let result = unsafe { libc::poll(polls.as_mut_ptr(), polls.len() as libc::nfds_t, 10) };
-            if result < 0
-                && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted
-            {
-                return Err(Error::new(format!(
-                    "poll failed: {}",
-                    std::io::Error::last_os_error()
-                )));
-            }
+            let interests: Vec<_> = processes.values().map(Process::interest).collect();
+            crate::platform::wait(&interests, Duration::from_millis(10))
+                .map_err(|e| Error::new(format!("poll failed: {e}")))?;
         }
     })();
     if let Err(error) = result {
@@ -520,6 +445,15 @@ pub(super) fn drive(
     }
     // Stop the entire scope and retain diagnostics before replies disconnect.
     for (id, process) in &mut processes {
-        process.finish(status.lock().unwrap().stderr.entry(id.clone()).or_default());
+        let mut shared = status.lock().unwrap();
+        if let Err(cleanup) = process.finish(shared.stderr.entry(id.clone()).or_default()) {
+            shared.error = Some(match shared.error.take() {
+                Some(error) => Error {
+                    exit_code: error.exit_code,
+                    message: format!("{error}; plugin {id}: {cleanup}"),
+                },
+                None => Error::new(format!("plugin {id}: {cleanup}")),
+            });
+        }
     }
 }

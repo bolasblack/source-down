@@ -3,7 +3,7 @@ title: 使用 mise 管理环境与任务并交付六种输入语言
 description: 固定可搬迁的开发环境、任务入口和跨语言验收门槛。
 tags: tooling, architecture, conformance, self-hosting
 updates: AGD-002, AGD-003
-updated_by: AGD-006, AGD-007, AGD-008, AGD-010
+updated_by: AGD-006, AGD-007, AGD-008, AGD-010, AGD-012
 ---
 
 ## Context

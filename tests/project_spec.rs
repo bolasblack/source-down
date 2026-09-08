@@ -1,5 +1,6 @@
 //! The project spec plugin is exercised through its real process and the CLI.
 //! SPEC-PRJ-001, SPEC-PRJ-002, SPEC-PRJ-003.
+use source_down::platform::symlink_file;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -7,7 +8,10 @@ fn plugin() -> PathBuf {
     Path::new(env!("CARGO_BIN_EXE_source-down"))
         .parent()
         .unwrap()
-        .join("examples/spec-plugin")
+        .join(format!(
+            "examples/spec-plugin{}",
+            std::env::consts::EXE_SUFFIX
+        ))
 }
 
 fn project() -> tempfile::TempDir {
@@ -379,7 +383,7 @@ fn unreadable_inventory_inputs_fail_execution_and_preserve_reports() {
         assert_eq!(std::fs::read_to_string(&report).unwrap(), "previous report");
     }
     std::fs::remove_file(&material).unwrap();
-    std::os::unix::fs::symlink("../../a.rs", &material).unwrap();
+    symlink_file("../../a.rs", &material).unwrap();
     let output = render(root.path(), &["a.rs"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr).contains("symlink"));

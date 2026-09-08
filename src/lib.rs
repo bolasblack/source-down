@@ -15,6 +15,7 @@ pub mod json;
 pub mod lang;
 pub mod markdown;
 pub mod model;
+pub mod platform;
 mod publication;
 pub mod render;
 pub mod results;

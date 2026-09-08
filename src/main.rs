@@ -38,9 +38,8 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    if let Err(error) = signal_hook::flag::register(signal_hook::consts::SIGINT, cancelled.clone())
-    {
-        eprintln!("source-down: cannot register SIGINT handler: {error}");
+    if let Err(error) = source_down::platform::register_cancellation(cancelled.clone()) {
+        eprintln!("source-down: cannot register cancellation handler: {error}");
         std::process::exit(1);
     }
     let result = match cli.command {

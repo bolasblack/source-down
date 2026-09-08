@@ -10,11 +10,11 @@ for argument do
         continue
     fi
     case "$argument" in
-        --target=x86_64-unknown-linux-gnu) argument=--target=x86_64-linux-gnu ;;
+        --target=*-unknown-linux-*) argument=--target=$(printf '%s' "${argument#--target=}" | sed 's/-unknown//') ;;
         # Rust's coverage runtime uses the GCC driver's -u SYMBOL spelling.
         # Forward the option and its literal operand directly to Zig's linker.
         -u) set -- "$@" -Xlinker -u; linker_symbol=true; continue ;;
     esac
     set -- "$@" "$argument"
 done
-exec zig cc --target=x86_64-linux-gnu "$@"
+exec zig cc --target="${SD_ZIG_TARGET:?run through tools/build.py}" "$@"

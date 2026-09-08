@@ -38,7 +38,7 @@ def check():
             for number, line in enumerate(text.splitlines(), 1):
                 if re.search(r"\bSPEC-[A-Z]+-[0-9]+\b", line, re.I):
                     errors.append(
-                        f"{path.relative_to(ROOT)}:{number}: AGD must not reference SPEC clause IDs")
+                        f"{path.relative_to(ROOT).as_posix()}:{number}: AGD must not reference SPEC clause IDs")
         for clause in re.findall(r"^## (SPEC-[A-Z]+-[0-9]{3})\b", text, re.M):
             if clause in definitions:
                 errors.append(f"duplicate definition {clause}: {path}")
@@ -57,16 +57,16 @@ def check():
                     filename = filename[:-3]
                 linked = (path.parent / unquote(filename)).resolve() if filename else path
                 if not linked.exists():
-                    errors.append(f"{path.relative_to(ROOT)}: broken local link {target}")
+                    errors.append(f"{path.relative_to(ROOT).as_posix()}: broken local link {target}")
                 elif anchor.startswith("spec-") and f'id="{anchor}"' not in linked.read_text():
-                    errors.append(f"{path.relative_to(ROOT)}: missing anchor {target}")
+                    errors.append(f"{path.relative_to(ROOT).as_posix()}: missing anchor {target}")
                 elif guide_page and linked.read_text().count(f'<a id="{anchor}"></a>') != 1:
-                    errors.append(f"{path.relative_to(ROOT)}: missing or duplicate guide anchor {target}")
+                    errors.append(f"{path.relative_to(ROOT).as_posix()}: missing or duplicate guide anchor {target}")
     for path in files:
         if path.is_relative_to(ROOT / "docs/specs"):
             for clause in set(re.findall(r"SPEC-[A-Z]+-[0-9]{3}", path.read_text())):
                 if clause not in definitions:
-                    errors.append(f"{path.relative_to(ROOT)}: undefined {clause}")
+                    errors.append(f"{path.relative_to(ROOT).as_posix()}: undefined {clause}")
     if errors:
         raise SystemExit("\n".join(errors))
     environment = dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT))

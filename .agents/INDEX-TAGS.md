@@ -14,3 +14,4 @@ decisions/AGD-008_enforce-ninety-percent-test-coverage.md: #conformance, #toolin
 decisions/AGD-009_own-persistent-plugin-processes-in-one-session-driver.md: #architecture, #conformance
 decisions/AGD-010_keep-decisions-self-contained-and-separate-lint.md: #conformance, #tooling
 decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md: #architecture, #conformance, #self-hosting
+decisions/AGD-012_release-native-platform-artifacts.md: #architecture, #tooling, #conformance

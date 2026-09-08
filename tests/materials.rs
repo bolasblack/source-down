@@ -86,10 +86,10 @@ fn markdown_context_mixed_inputs_and_empty_plugins_share_the_real_batch() {
 [inputs]
 exclude = ["book/skip.md"]
 [plugins.note]
-command = ["python3", "note.py"]
+command = ["python", "note.py"]
 directives = ["note"]
 [plugins.observer]
-command = ["python3", "observer.py"]
+command = ["python", "observer.py"]
 "#,
     )
     .unwrap();
@@ -174,7 +174,7 @@ fn project_code_name_is_free_while_override_requires_a_current_builtin() {
 emit({'type':'result','batch_id':b['batch_id'],'results':[{'id':r['id'],'status':'ok','markdown':'Custom code owner','sources':[r['source']]} for r in b['requests']],
       'append':[],'reports':{},'diagnostics':[],'dependencies':[]})
 "#)).unwrap();
-    let config = "config_version = 1\n[plugins.custom]\ncommand = ['python3','plugin.py']\ndirectives = ['code']\n";
+    let config = "config_version = 1\n[plugins.custom]\ncommand = ['python','plugin.py']\ndirectives = ['code']\n";
     fs::write(root.path().join("source-down.toml"), config).unwrap();
     let custom = render();
     assert!(
@@ -208,7 +208,7 @@ fn arrays_reach_real_external_plugins_as_structured_data() {
         root.path().join("source-down.toml"),
         r#"config_version = 1
 [plugins.note]
-command = ["python3", "plugin.py"]
+command = ["python", "plugin.py"]
 directives = ["note"]
 "#,
     )

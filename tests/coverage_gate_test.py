@@ -16,7 +16,7 @@ class CoverageGateTest(unittest.TestCase):
         self.output = Path(self.temporary.name)
         paths = sorted((ROOT / "src").rglob("*.rs")) + [ROOT / "tools/spec_plugin.rs"]
         self.rust = {"data": [{"files": [
-            {"filename": str(path), "summary": {"lines": {"count": 10000, "covered": 9000}}}
+            {"filename": path.as_posix(), "summary": {"lines": {"count": 10000, "covered": 9000}}}
             for path in paths
         ]}]}
         self.python = {"files": {"tools/project_docs.py": {"summary": {

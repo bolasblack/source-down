@@ -110,6 +110,7 @@ impl SourceFile {
 
 pub fn validate_relative_path(path: &str) -> Result<()> {
     if path.is_empty()
+        || crate::platform::path_text(Path::new(path)).as_deref() != Some(path)
         || path.chars().any(|c| c <= '\u{1f}' || c == '\u{7f}')
         || Path::new(path)
             .components()
@@ -123,6 +124,10 @@ pub fn validate_relative_path(path: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+pub(crate) fn path_text(path: &Path) -> Result<String> {
+    crate::platform::path_text(path).ok_or_else(|| Error::new("path is not UTF-8"))
 }
 
 // {% spec "mod-004" %}
@@ -151,10 +156,7 @@ impl SourceStore {
         let relative = actual
             .strip_prefix(&self.root)
             .map_err(|_| Error::new(format!("{}: outside project root", path.display())))?;
-        let name = relative
-            .to_str()
-            .ok_or_else(|| Error::new("path is not UTF-8"))?
-            .to_owned();
+        let name = path_text(relative)?;
         validate_relative_path(&name)?;
         Ok(name)
     }

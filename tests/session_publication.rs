@@ -1,4 +1,5 @@
 //! SPEC-CLI-004, SPEC-PLG-008: publication observes the live session's I/O owner.
+#[cfg(target_os = "linux")]
 mod common;
 
 #[test]
@@ -87,7 +88,7 @@ int statx(int fd, const char *path, int flags, unsigned int mask, struct statx *
     std::fs::write(root.path().join("a.rs"), "// page\n").unwrap();
     std::fs::write(
         root.path().join("source-down.toml"),
-        "config_version=1\n[plugins.checker]\ncommand=['python3','plugin.py']\n",
+        "config_version=1\n[plugins.checker]\ncommand=['python','plugin.py']\n",
     )
     .unwrap();
     std::fs::write(root.path().join("plugin.py"), common::plugin(r#"

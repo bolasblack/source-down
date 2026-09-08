@@ -1,5 +1,6 @@
 //! Page publication is observed through the real CLI. SPEC-CLI-007, SPEC-REN-007.
 mod common;
+use source_down::platform::symlink_file;
 use std::process::Command;
 
 fn checker(
@@ -14,7 +15,7 @@ fn checker(
         .create(true)
         .open(root.join("source-down.toml"))
         .unwrap();
-    writeln!(config, "\n[plugins.{id}]\ncommand=['python3','{id}.py']\n").unwrap();
+    writeln!(config, "\n[plugins.{id}]\ncommand=['python','{id}.py']\n").unwrap();
     let response = serde_json::json!({"type":"result","batch_id":"r1","dependencies":[],"results":[],"append":append,"reports":reports,"diagnostics":[]});
     std::fs::write(
         root.join(format!("{id}.py")),
@@ -293,12 +294,12 @@ fn an_empty_batch_can_publish_an_error_report_while_preserving_pages() {
     std::fs::write(root.path().join("b.py"), "pass\n").unwrap();
     std::fs::create_dir_all(root.path().join(".source-down/pages")).unwrap();
     std::fs::write(root.path().join(".source-down/pages/a.rs.md"), "old page\n").unwrap();
-    std::fs::write(root.path().join("source-down.toml"), "config_version=1\n[plugins.checker]\ncommand=['python3','checker.py']\ndirectives=['check']\n").unwrap();
+    std::fs::write(root.path().join("source-down.toml"), "config_version=1\n[plugins.checker]\ncommand=['python','checker.py']\ndirectives=['check']\n").unwrap();
     std::fs::write(root.path().join("checker.py"), common::plugin(r#"import json,sys
 assert initial['protocol_version']==1
 assert b['input_files']==['a.rs','b.py']
 assert b['requests']==[]
-open('calls','a').write('called\n')
+open('calls','a',newline=chr(10)).write('called\n')
 emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],'results':[],'append':[],
   'reports':{'coverage':{'markdown':'Missing required references.','sources':[]}},
   'diagnostics':[{'severity':'error','code':'unreferenced','message':'Required references are missing.','sources':[]}]},sys.stdout)
@@ -331,7 +332,9 @@ emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],'results':[],'a
     assert!(report.contains("> **Input**: `a.rs`\n>\n> **Input**: `b.py`"));
     assert!(
         String::from_utf8_lossy(&output.stderr)
-            .contains(".source-down/reports/checker/coverage.md")
+            .contains(".source-down/reports/checker/coverage.md"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -342,7 +345,7 @@ fn later_plugins_run_after_checked_errors_but_execution_failures_keep_all_output
     std::fs::write(root.path().join("b.py"), "pass\n").unwrap();
     std::fs::write(
         root.path().join("source-down.toml"),
-        "config_version=1\n[plugins.alpha]\ncommand=['python3','alpha.py']\ndirectives=['note']\n",
+        "config_version=1\n[plugins.alpha]\ncommand=['python','alpha.py']\ndirectives=['note']\n",
     )
     .unwrap();
     std::fs::write(root.path().join("alpha.py"), common::plugin("emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],'results':[{'id':r['id'],'status':'error','code':'missing','message':'checked error'} for r in b['requests']],'append':[],'reports':{},'diagnostics':[]},sys.stdout)\n")).unwrap();
@@ -394,7 +397,7 @@ fn stale_report_symlinks_and_declared_sources_are_protected_before_publication()
     assert_eq!(std::fs::read_to_string(&old).unwrap(), "source material");
     std::fs::write(root.path().join("a.rs"), "fn a() {}\n").unwrap();
     std::fs::remove_file(&old).unwrap();
-    std::os::unix::fs::symlink("../../../a.rs", &old).unwrap();
+    symlink_file("../../../a.rs", &old).unwrap();
     let result = render(root.path());
     assert_eq!(result.status.code(), Some(1));
     assert!(

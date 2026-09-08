@@ -1,7 +1,7 @@
 config_version = 1
 
 [plugins.project]
-command = ["python3", "tools/project_docs.py"]
+command = ["python", "tools/project_docs.py"]
 directives = ["package", "modules", "api"]
 
 [plugins.spec]

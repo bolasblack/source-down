@@ -987,11 +987,10 @@ fn plugins_reuse_the_same_validated_source_snapshot() {
     assert_eq!(success(&original[0]).1, success(&repeated[0]).1);
 }
 
-#[cfg(unix)]
 #[test]
 fn material_symlinks_must_stay_inside_the_project() {
     // SPEC-BLT-002: resolved source provenance is canonical and rooted.
-    use std::os::unix::fs::symlink;
+    use source_down::platform::symlink_file as symlink;
     let root = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
     fs::write(root.path().join("actual.md"), "inside").unwrap();

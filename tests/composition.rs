@@ -40,7 +40,7 @@ fn fixture(value: Value) -> tempfile::TempDir {
         common::plugin(
             r#"
 import os
-with open('batches.jsonl','a') as trace:
+with open('batches.jsonl','a',newline=chr(10)) as trace:
     trace.write(json.dumps([os.getpid(),b])+'\n')
 with open('response.json') as source:
     result=json.load(source)
@@ -52,7 +52,7 @@ emit(result)
     .unwrap();
     fs::write(
         root.path().join("source-down.toml"),
-        "config_version=1\n[plugins.api]\ncommand=['python3','api.py']\ndirectives=['api']\n",
+        "config_version=1\n[plugins.api]\ncommand=['python','api.py']\ndirectives=['api']\n",
     )
     .unwrap();
     root
@@ -103,13 +103,13 @@ fn real_plugin_composes_text_and_standard_include_with_per_block_sources() {
     .unwrap();
     fs::write(
         root.path().join("source-down.toml"),
-        "config_version=1\n[plugins.api]\ncommand=['python3','api.py']\ndirectives=['api']\n",
+        "config_version=1\n[plugins.api]\ncommand=['python','api.py']\ndirectives=['api']\n",
     )
     .unwrap();
     fs::write(root.path().join("api.py"), common::plugin(r#"
 assert b['input_files'] == ['notes.rs']
 assert len(b['requests']) == 1
-with open('batches.jsonl','a') as trace:
+with open('batches.jsonl','a',newline=chr(10)) as trace:
     trace.write(json.dumps(b) + '\n')
 r = b['requests'][0]
 assert r['source'] == {'path':'notes.rs','start_byte':3,'end_byte':20,'start_line':1,'end_line':1}
@@ -301,7 +301,7 @@ fn standard_calls_bypass_project_override_and_match_ordinary_include() {
         String::from_utf8_lossy(&plain.stderr)
     );
     let expected = fs::read(root.path().join(".source-down/pages/notes.rs.md")).unwrap();
-    fs::write(root.path().join("source-down.toml"),"config_version=1\n[plugins.api]\ncommand=['python3','api.py']\ndirectives=['include']\noverride=['include']\n").unwrap();
+    fs::write(root.path().join("source-down.toml"),"config_version=1\n[plugins.api]\ncommand=['python','api.py']\ndirectives=['include']\noverride=['include']\n").unwrap();
     fs::write(
         root.path().join("response.json"),
         serde_json::to_vec(&response(json!([call("material.md", json!({}))]))).unwrap(),
@@ -476,7 +476,7 @@ fn failed_report_or_appendix_preserves_all_old_artifacts_and_stops_later_batches
         let config = fs::read_to_string(root.path().join("source-down.toml")).unwrap();
         fs::write(
             root.path().join("source-down.toml"),
-            format!("{config}\n[plugins.zlater]\ncommand=['python3','later.py']\n"),
+            format!("{config}\n[plugins.zlater]\ncommand=['python','later.py']\n"),
         )
         .unwrap();
         fs::write(root.path().join("later.py"),common::plugin("open('later-ran','w').write('unexpected')\nemit({'type':'result','batch_id':b['batch_id'],'results':[],'append':[],'reports':{},'diagnostics':[],'dependencies':[]})")).unwrap();

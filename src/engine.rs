@@ -118,17 +118,7 @@ impl Session {
         let config_materials = sources.paths().map(|p| root.join(p)).collect();
         let output_root =
             publication::output_root(&root, output_dir.unwrap_or(Path::new(".source-down")))?;
-        for child in ["pages", "reports"] {
-            config.inputs.exclude.push(
-                output_root
-                    .join(child)
-                    .strip_prefix(&root)
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_owned(),
-            );
-        }
+        config::exclude_outputs(&mut config, &root, &output_root);
         let (registry, owners) = registry(&config)?;
         Ok(Self {
             root,
@@ -390,7 +380,7 @@ pub fn run(
     for target in &outcome.reports {
         eprintln!(
             "source-down: report {}",
-            target.strip_prefix(&session.root).unwrap().display()
+            path_text(target.strip_prefix(&session.root).unwrap())?
         );
     }
     if outcome.check_failed {

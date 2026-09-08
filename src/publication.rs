@@ -2,7 +2,6 @@
 use crate::{config, model::*};
 use std::collections::BTreeSet;
 use std::io::Write;
-use std::os::fd::IntoRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -27,30 +26,10 @@ pub(crate) fn publish<'a>(
     check()?;
     let root = &sources.root;
     let report_targets: BTreeSet<_> = reports.iter().map(|(path, _)| path.clone()).collect();
-    let mut stale = Vec::new();
-    for id in report_owners {
-        check()?;
-        let directory = output_root.join("reports").join(id);
-        validate_directories(root, &directory)?;
-        let entries = match std::fs::read_dir(&directory) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(Error::new(format!("{}: {e}", directory.display()))),
-        };
-        for entry in entries {
-            let path = entry.map_err(|e| Error::new(e.to_string()))?.path();
-            if path.extension().is_some_and(|ext| ext == "md")
-                && path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .is_some_and(config::valid_component)
-                && !report_targets.contains(&path)
-            {
-                stale.push(path);
-            }
-        }
-    }
-    stale.sort();
+    let stale: Vec<_> = report_files(root, output_root, report_owners, check)?
+        .into_iter()
+        .filter(|path| !report_targets.contains(path))
+        .collect();
     let targets: BTreeSet<_> = reports
         .iter()
         .chain(pages)
@@ -68,6 +47,45 @@ pub(crate) fn publish<'a>(
             )));
         }
     }
+    // SPEC-CLI-007: source ownership also protects existing hard-link aliases.
+    let mut protected_identities = BTreeSet::new();
+    for path in sources
+        .paths()
+        .map(|p| root.join(p))
+        .chain(protected.iter().cloned())
+    {
+        check()?;
+        if let Some(identity) = file_identity(&path)? {
+            protected_identities.insert(identity);
+        }
+    }
+    let check_target = |target: &Path| -> Result<()> {
+        validate_target(root, target)?;
+        // Creating a parent is an output operation too; a missing file dependency owns that name.
+        for parent in target
+            .ancestors()
+            .skip(1)
+            .take_while(|parent| *parent != root)
+        {
+            if protected.contains(parent) && file_identity(parent)?.is_none() {
+                return Err(Error::new(format!(
+                    "{}: output directory would replace a missing file dependency",
+                    parent.display()
+                )));
+            }
+        }
+        let relative = path_text(target.strip_prefix(root).unwrap())?;
+        if sources.contains(&relative)
+            || protected.iter().any(|path| path.starts_with(target))
+            || file_identity(target)?
+                .is_some_and(|identity| protected_identities.contains(&identity))
+        {
+            return Err(Error::new(format!(
+                "{relative}: output would overwrite an input or source material"
+            )));
+        }
+        Ok(())
+    };
     for target in reports
         .iter()
         .chain(pages)
@@ -75,13 +93,7 @@ pub(crate) fn publish<'a>(
         .chain(&stale)
     {
         check()?;
-        validate_target(root, target)?;
-        let relative = target.strip_prefix(root).unwrap().to_str().unwrap();
-        if sources.contains(relative) || protected.contains(target) {
-            return Err(Error::new(format!(
-                "{relative}: output would overwrite an input or source material"
-            )));
-        }
+        check_target(target)?;
     }
     let mut prepared = Vec::new();
     for (target, markdown) in reports.iter().chain(pages) {
@@ -103,18 +115,18 @@ pub(crate) fn publish<'a>(
     for (target, temporary) in operations {
         let operation = || -> Result<()> {
             check()?;
-            validate_target(root, target)?;
+            check_target(target)?;
             check()?;
-            if let Some(temporary) = temporary {
-                temporary
-                    .persist(target)
+            if let Some(mut temporary) = temporary {
+                crate::platform::replace_file(&temporary, target)
                     .map_err(|e| Error::new(format!("publish: {e}")))?;
+                temporary.disable_cleanup(true);
             } else {
                 std::fs::remove_file(target).map_err(|e| Error::new(format!("remove: {e}")))?;
             }
             Ok(())
         };
-        let relative = target.strip_prefix(root).unwrap().display().to_string();
+        let relative = path_text(target.strip_prefix(root).unwrap())?;
         if let Err(error) = operation() {
             return Err(Error {
                 exit_code: error.exit_code,
@@ -133,6 +145,61 @@ pub(crate) fn publish<'a>(
     Ok(())
 }
 
+fn file_identity(path: &Path) -> Result<Option<(u64, u64)>> {
+    match crate::platform::file_identity(path) {
+        Ok(identity) => Ok(Some(identity)),
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(e) => Err(Error::new(format!("file identity {}: {e}", path.display()))),
+    }
+}
+
+pub(crate) fn report_files<'a>(
+    root: &Path,
+    output: &Path,
+    owners: impl Iterator<Item = &'a str>,
+    check: &impl Fn() -> Result<()>,
+) -> Result<Vec<PathBuf>> {
+    let mut files = vec![];
+    for id in owners {
+        check()?;
+        if !(config::valid_component(id)
+            || id
+                .strip_prefix("builtin:")
+                .is_some_and(config::valid_component))
+        {
+            return Err(Error::new("invalid report owner"));
+        }
+        let directory = output.join("reports").join(id);
+        validate_directories(root, &directory)?;
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(Error::new(format!("{}: {e}", directory.display()))),
+        };
+        for entry in entries {
+            let path = entry.map_err(|e| Error::new(e.to_string()))?.path();
+            if path.extension().is_some_and(|ext| ext == "md")
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(config::valid_component)
+            {
+                validate_target(root, &path)?;
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
 // {% spec "cli-007" %}
 pub(crate) fn output_root(root: &Path, path: &Path) -> Result<PathBuf> {
     let absolute = root.join(path);
@@ -147,13 +214,9 @@ pub(crate) fn output_root(root: &Path, path: &Path) -> Result<PathBuf> {
             _ => return Err(Error::new("output must be inside project root")),
         }
     }
-    let relative = output
-        .strip_prefix(root)
-        .unwrap()
-        .to_str()
-        .ok_or_else(|| Error::new("output path is not UTF-8"))?;
+    let relative = path_text(output.strip_prefix(root).unwrap())?;
     if !relative.is_empty() {
-        validate_relative_path(relative)?;
+        validate_relative_path(&relative)?;
     }
     validate_directories(root, &output)?;
     Ok(output)
@@ -210,14 +273,7 @@ fn prepare(
         .map_err(|e| Error::new(format!("write output: {e}")))?;
     // Close before replacement; TempPath owns cleanup on every early return.
     let (file, temporary) = temporary.into_parts();
-    // SAFETY: into_raw_fd transfers sole ownership. close is called exactly once;
-    // on Linux an error still releases the descriptor, so it must not be retried.
-    if unsafe { libc::close(file.into_raw_fd()) } != 0 {
-        return Err(Error::new(format!(
-            "close output: {}",
-            std::io::Error::last_os_error()
-        )));
-    }
+    crate::platform::close(file).map_err(|e| Error::new(format!("close output: {e}")))?;
     check()?;
     reject_output_type(target)?;
     Ok(temporary)

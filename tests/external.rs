@@ -1,8 +1,12 @@
 mod common;
+#[path = "common/processes.rs"]
+mod processes;
+use processes::assert_stopped as assert_processes_stopped;
 // {% spec "plg-009" %}
 // {% spec "plg-010" %}
 use source_down::config::ExternalConfig;
 use source_down::external::ExternalSession;
+use source_down::platform::{ProcessState, process_state, terminate_process_tree};
 
 struct ExternalPlugin {
     id: String,
@@ -68,7 +72,7 @@ fn fixture_raw(
     let plugin = ExternalPlugin {
         id: "example".into(),
         config: ExternalConfig {
-            command: vec!["python3".into(), "plugin.py".into()],
+            command: vec!["python".into(), "plugin.py".into()],
             directives: vec!["note".into()],
             overrides: vec![],
             timeout_ms: timeout,
@@ -110,7 +114,10 @@ for line in sys.stdin:
     let output = plugin.run(&batch, &mut sources).unwrap();
     assert_eq!(output.results.len(), 1);
     let pid = std::fs::read_to_string(dir.path().join("pid")).unwrap();
-    assert!(running(pid.parse().unwrap()));
+    assert_eq!(
+        process_state(pid.parse().unwrap()).unwrap(),
+        ProcessState::Running
+    );
     plugin.close().unwrap();
     assert_processes_stopped(&[pid.parse().unwrap()]);
 }
@@ -122,7 +129,7 @@ fn real_plugin_receives_batch_in_project_root_and_returns_results() {
 import json, os, sys
 
 assert initial['protocol_version']==1 and initial['plugin']=='example'
-assert os.getcwd()==initial['project_root']
+assert os.path.samefile(os.getcwd(), initial['project_root'])
 assert batch['requests'][0]['arguments']=={'positional': [], 'named': {}}
 open('called','w').write(str(len(batch['requests'])))
 emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],'append':[],'reports':{},'diagnostics':[],'results':[{'id':r['id'],'status':'ok','markdown':'hello','sources':[r['source']]} for r in batch['requests']]},sys.stdout)
@@ -195,17 +202,14 @@ struct FixtureProcesses(std::path::PathBuf);
 
 impl Drop for FixtureProcesses {
     fn drop(&mut self) {
-        // This guard only targets a process group created by this test's plugin fixture.
+        // This guard only targets the process scope created by this test's plugin fixture.
         if let Ok(contents) = std::fs::read_to_string(self.0.join("pids"))
             && let Some(pid) = contents
                 .split_whitespace()
                 .next()
                 .and_then(|pid| pid.parse::<i32>().ok())
-            && pid > 1
         {
-            unsafe {
-                libc::kill(-pid, libc::SIGKILL);
-            }
+            let _ = terminate_process_tree(pid);
         }
     }
 }
@@ -216,33 +220,6 @@ fn fixture_pids(dir: &std::path::Path) -> Vec<i32> {
         .split_whitespace()
         .map(|pid| pid.parse().unwrap())
         .collect()
-}
-
-#[cfg(target_os = "linux")]
-fn running(pid: i32) -> bool {
-    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Ok(stat) => stat
-            .rsplit_once(") ")
-            .is_some_and(|(_, tail)| !tail.starts_with('Z')),
-        Err(_) => false,
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn assert_processes_stopped(pids: &[i32]) {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while pids.iter().any(|&pid| running(pid)) && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(
-        pids.iter().all(|&pid| !running(pid)),
-        "fixture processes still running: {pids:?}"
-    );
-    // The direct child belongs to this host and must have been reaped, not merely killed.
-    assert!(
-        !std::path::Path::new(&format!("/proc/{}", pids[0])).exists(),
-        "direct child was not reaped"
-    );
 }
 
 #[test]
@@ -440,7 +417,7 @@ time.sleep(30)
         dir.path().join("source-down.toml"),
         concat!(
             "config_version = 1\n[plugins.example]\n",
-            "command = [\"python3\", \"plugin.py\"]\n",
+            "command = [\"python\", \"plugin.py\"]\n",
             "directives = [\"note\"]\ntimeout_ms = 5000\n",
         ),
     )
@@ -710,7 +687,7 @@ fn invalid_initialization_and_response_states_fail_before_a_round_is_accepted() 
 
 #[test]
 fn dependencies_are_normalized_without_reading_material_content() {
-    use std::os::unix::fs::symlink;
+    use source_down::platform::symlink_file as symlink;
     let (dir, mut plugin, mut sources, batch) = fixture(
         r#"
 emit({'type':'result','batch_id':b['batch_id'],'results':[{'id':'d1','status':'error','code':'missing','message':'checked'}],
@@ -737,7 +714,7 @@ emit({'type':'result','batch_id':b['batch_id'],'results':[{'id':'d1','status':'e
 
 #[test]
 fn invalid_dependency_paths_and_closed_variants_fail_the_whole_result() {
-    use std::os::unix::fs::symlink;
+    use source_down::platform::symlink_file as symlink;
     for dependency in [
         serde_json::json!({"kind":"file","path":"../escape"}),
         serde_json::json!({"kind":"file","path":"/absolute"}),
@@ -781,7 +758,7 @@ sys.exit(9)
 "#,
         3000,
     );
-    std::fs::write(dir.path().join("source-down.toml"), "config_version=1\n[plugins.example]\ncommand=['python3','plugin.py']\ndirectives=['note']\n").unwrap();
+    std::fs::write(dir.path().join("source-down.toml"), "config_version=1\n[plugins.example]\ncommand=['python','plugin.py']\ndirectives=['note']\n").unwrap();
     for path in [
         ".source-down/pages/input.rs.md",
         ".source-down/reports/example/current.md",

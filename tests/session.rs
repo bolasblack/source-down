@@ -1,5 +1,7 @@
 // SPEC-MOD-004, SPEC-PLG-003: each prepared round owns fresh facts and one complete result.
 mod common;
+#[path = "common/processes.rs"]
+mod processes;
 use source_down::engine::Session;
 use std::sync::{Arc, atomic::AtomicBool};
 
@@ -10,16 +12,16 @@ fn a_session_reuses_one_process_for_separate_complete_rounds() {
     std::fs::write(root.path().join("b.rs"), "// {% note 'second' %}\n").unwrap();
     let script = common::plugin(r#"
 import os
-with open('runs','a') as out:
+with open('runs','a',newline=chr(10)) as out:
     out.write(json.dumps([os.getpid(),b['batch_id'],b['input_files'],[r['id'] for r in b['requests']]])+'\n')
 emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],
     'results':[{'id':r['id'],'status':'ok','markdown':r['arguments']['positional'][0],'sources':[r['source']]} for r in b['requests']],
     'append':[],'reports':{'current':{'markdown':b['requests'][0]['arguments']['positional'][0],'sources':[]}},'diagnostics':[]})
-"#).replace("for line in sys.stdin:", "open('initializations','a').write('initialize\\n')\nfor line in sys.stdin:");
+"#).replace("for line in sys.stdin:", "open('initializations','a',newline=chr(10)).write('initialize\\n')\nfor line in sys.stdin:");
     std::fs::write(root.path().join("plugin.py"), script).unwrap();
     std::fs::write(
         root.path().join("source-down.toml"),
-        "config_version=1\n[plugins.notes]\ncommand=['python3','plugin.py']\ndirectives=['note']\n",
+        "config_version=1\n[plugins.notes]\ncommand=['python','plugin.py']\ndirectives=['note']\n",
     )
     .unwrap();
     let mut session =
@@ -109,7 +111,7 @@ fn dependency_only_material_cannot_be_overwritten_or_pruned() {
             std::fs::write(root.path().join("plugin.py"), common::plugin(&body)).unwrap();
             std::fs::write(
                 root.path().join("source-down.toml"),
-                "config_version=1\n[plugins.notes]\ncommand=['python3','plugin.py']\n",
+                "config_version=1\n[plugins.notes]\ncommand=['python','plugin.py']\n",
             )
             .unwrap();
             let mut session =
@@ -148,7 +150,7 @@ fn project_materials_and_directory_inventory_refresh_each_round() {
     )
     .unwrap();
     let plugin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/project_docs.py");
-    std::fs::write(root.path().join("source-down.toml"), format!("config_version=1\n[plugins.project]\ncommand=['python3','{}']\ndirectives=['package','modules']\n", plugin.display())).unwrap();
+    std::fs::write(root.path().join("source-down.toml"), format!("config_version=1\n[plugins.project]\ncommand=['python','{}']\ndirectives=['package','modules']\n", plugin.display())).unwrap();
     let mut session =
         Session::new(root.path(), None, None, Arc::new(AtomicBool::new(false))).unwrap();
     let first = session.prepare(&["src".into()]).unwrap().publish().unwrap();
@@ -232,7 +234,10 @@ fn spec_inventory_dependencies_include_unmatched_files_and_refresh_after_changes
     let plugin = std::path::Path::new(env!("CARGO_BIN_EXE_source-down"))
         .parent()
         .unwrap()
-        .join("examples/spec-plugin");
+        .join(format!(
+            "examples/spec-plugin{}",
+            std::env::consts::EXE_SUFFIX
+        ));
     std::fs::write(
         root.path().join("source-down.toml"),
         format!(
@@ -300,7 +305,7 @@ fn initialization_and_execution_failures_clean_every_started_instance_and_stop_b
         std::fs::write(root.path().join("a.rs"), "// {% note %}\n").unwrap();
         let mut config = String::from("config_version=1\n");
         for id in ["alpha", "beta", "gamma"] {
-            config.push_str(&format!("[plugins.{id}]\ncommand=['python3','{id}.py']\n"));
+            config.push_str(&format!("[plugins.{id}]\ncommand=['python','{id}.py']\n"));
             if id == "alpha" {
                 config.push_str("directives=['note']\n");
             }
@@ -311,8 +316,8 @@ fn initialization_and_execution_failures_clean_every_started_instance_and_stop_b
             } else {
                 "emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],'results':[{'id':r['id'],'status':'ok','markdown':'ok','sources':[r['source']]} for r in b['requests']],'append':[],'reports':{},'diagnostics':[]})"
             };
-            let body = format!("open('batches','a').write('{id}\\n')\n{body}");
-            let script = common::plugin(&body).replace("print(json.dumps({'type':'ready','protocol_version':1}), flush=True)", &format!("import os\nopen('{id}.pid','w').write(str(os.getpid()))\nopen('initializations','a').write('{id}\\n')\n{}", if id == "beta" && failure == "initialize" { "sys.exit(7)" } else { "print(json.dumps({'type':'ready','protocol_version':1}),flush=True)" }));
+            let body = format!("open('batches','a',newline=chr(10)).write('{id}\\n')\n{body}");
+            let script = common::plugin(&body).replace("print(json.dumps({'type':'ready','protocol_version':1}), flush=True)", &format!("import os\nopen('{id}.pid','w').write(str(os.getpid()))\nopen('initializations','a',newline=chr(10)).write('{id}\\n')\n{}", if id == "beta" && failure == "initialize" { "sys.exit(7)" } else { "print(json.dumps({'type':'ready','protocol_version':1}),flush=True)" }));
             std::fs::write(root.path().join(format!("{id}.py")), script).unwrap();
         }
         std::fs::write(root.path().join("source-down.toml"), config).unwrap();
@@ -347,13 +352,99 @@ fn initialization_and_execution_failures_clean_every_started_instance_and_stop_b
         }
         for id in initializations.lines() {
             let pid = std::fs::read_to_string(root.path().join(format!("{id}.pid"))).unwrap();
-            assert!(
-                !std::path::Path::new(&format!("/proc/{pid}")).exists(),
-                "{failure}: {id} not reaped"
-            );
+            processes::assert_stopped(&[pid.trim().parse().unwrap()]);
         }
         assert!(session.prepare(&["a.rs".into()]).is_err());
     }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn a_failed_group_signal_still_reaps_an_exited_plugin() {
+    // SPEC-PLG-008: a signalling error must not bypass reaping an exited direct child.
+    if let Some(root) = std::env::var_os("SD_FAILED_SIGNAL_ROOT") {
+        let root = std::path::PathBuf::from(root);
+        let mut session =
+            Session::new(&root, None, None, Arc::new(AtomicBool::new(false))).unwrap();
+        let error = match session.prepare(&["a.rs".into()]) {
+            Ok(_) => panic!("accepted an invalid initialization frame"),
+            Err(error) => error,
+        };
+        assert!(error.message.contains("process cleanup:"), "{error}");
+        let pid = std::fs::read_to_string(root.join("pid")).unwrap();
+        processes::assert_stopped(&[pid.parse().unwrap()]);
+        return;
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("a.rs"), "// page\n").unwrap();
+    std::fs::write(
+        root.path().join("source-down.toml"),
+        "config_version=1\n[plugins.fixture]\ncommand=['python','plugin.py']\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.path().join("plugin.py"),
+        "import os,sys\nsys.stdin.readline()\nopen('pid','w').write(str(os.getpid()))\nprint('invalid frame',flush=True)\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.path().join("signal.c"),
+        r#"
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+int kill(pid_t pid, int signal) {
+    int (*real_kill)(pid_t,int) = dlsym(RTLD_NEXT,"kill");
+    if (pid < -1 && signal == SIGKILL) {
+        siginfo_t info = {0};
+        // The fixture exits after its invalid frame. Keep it waitable, as on macOS.
+        int result;
+        do { result = waitid(P_PID, -pid, &info, WEXITED | WNOWAIT); }
+        while (result < 0 && errno == EINTR);
+        if (result == 0) {
+            fputs("injected group EPERM for exited child\n", stderr);
+            errno = EPERM;
+            return -1;
+        }
+        if (errno != ECHILD) abort();
+    }
+    return real_kill(pid, signal);
+}
+"#,
+    )
+    .unwrap();
+    let compiled = std::process::Command::new(std::env::var_os("CC").expect("run through mise"))
+        .current_dir(root.path())
+        .args(["-shared", "-fPIC", "signal.c", "-o", "signal.so", "-ldl"])
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "a_failed_group_signal_still_reaps_an_exited_plugin",
+            "--nocapture",
+        ])
+        .env("SD_FAILED_SIGNAL_ROOT", root.path())
+        .env("LD_PRELOAD", root.path().join("signal.so"))
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("injected group EPERM for exited child"));
+    assert!(
+        output.status.success(),
+        "{}\n{stderr}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 #[test]
@@ -367,7 +458,7 @@ emit({'type':'result','batch_id':b['batch_id'],'dependencies':[], 'results':[], 
 "#)).unwrap();
     std::fs::write(
         root.path().join("source-down.toml"),
-        "config_version=1\n[plugins.checker]\ncommand=['python3','plugin.py']\ntimeout_ms=200\n",
+        "config_version=1\n[plugins.checker]\ncommand=['python','plugin.py']\ntimeout_ms=200\n",
     )
     .unwrap();
     let mut session =

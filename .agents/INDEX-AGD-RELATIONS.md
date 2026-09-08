@@ -32,3 +32,5 @@ decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md -(
 decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md -(r)-> decisions/AGD-007_check-spec-references-through-a-project-plugin.md
 decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md -(r)-> decisions/AGD-009_own-persistent-plugin-processes-in-one-session-driver.md
 decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md -(r)-> decisions/AGD-010_keep-decisions-self-contained-and-separate-lint.md
+decisions/AGD-012_release-native-platform-artifacts.md -(u)-> decisions/AGD-005_use-mise-and-ship-six-input-languages.md
+decisions/AGD-012_release-native-platform-artifacts.md -(u)-> decisions/AGD-009_own-persistent-plugin-processes-in-one-session-driver.md

@@ -1,0 +1,189 @@
+# Repository matrix adaptation of the release skill; contract: docs/releasing.md.
+# CI prepares a complete unpublished draft; a human publishes it afterward.
+name: draft-release
+run-name: draft-release ${{ inputs.tag || github.ref_name }}
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated tag to prepare as a draft
+        required: true
+        type: string
+
+concurrency:
+  group: draft-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  verify:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
+        with:
+          version: "2026.6.2"
+          install: "true"
+          # mise's cache omits the rustup toolchains behind its Rust links.
+          cache: "false"
+      - name: Verify release identity
+        id: identity
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |-
+          python3 .github/release/check.py --tagged --tag-prefix v --version-file Cargo.toml "$TAG"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Full development acceptance
+        run: mise run check && mise run review && mise run acceptance && mise run benchmark
+
+  build:
+    needs: verify
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      SD_RELEASE_TARGET: ${{ matrix.target }}
+      PYTHONUTF8: "1"
+    steps:
+      - name: Preserve source bytes on checkout
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.verify.outputs.commit }}
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
+        with:
+          version: "2026.6.2"
+          install: "true"
+          # mise's cache omits the rustup toolchains behind its Rust links.
+          cache: "false"
+      - name: Install target standard library
+        run: rustup target add "$SD_RELEASE_TARGET"
+      - name: Build, archive and run the extracted artifact
+        run: mise run release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  collect:
+    needs: [verify, build]
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.verify.outputs.commit }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: dist
+      - name: Verify the complete inventory and stage one manifest
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |-
+          version=${TAG#v}
+          python3 .github/release/prepare-assets.py --stage-dir "$RUNNER_TEMP/release-assets" dist \
+            "source-down-$version-x86_64-unknown-linux-gnu.tar.gz" \
+            "source-down-$version-x86_64-unknown-linux-musl.tar.gz" \
+            "source-down-$version-aarch64-unknown-linux-gnu.tar.gz" \
+            "source-down-$version-aarch64-unknown-linux-musl.tar.gz" \
+            "source-down-$version-aarch64-apple-darwin.tar.gz" \
+            "source-down-$version-x86_64-pc-windows-msvc.zip" \
+            "source-down-$version-source.tar.gz"
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 8
+          (cd "$RUNNER_TEMP/release-assets" && sha256sum --check SHA256SUMS)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+          retention-days: 1
+
+  draft:
+    needs: [verify, collect]
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.verify.outputs.commit }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release-assets
+      - name: Create a complete unpublished draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROJECT: "Source Down"
+          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG_PREFIX: "v"
+        run: |-
+          set -eu
+          version=${TAG#"$TAG_PREFIX"}
+          version_without_build=${version%%+*}
+          prerelease=false
+          case "$version_without_build" in *-*) prerelease=true ;; esac
+          if state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            [ "$state" = "true" ] || { echo "release $TAG is already published; refusing to mutate it" >&2; exit 1; }
+          else
+            set --
+            [ "$prerelease" = "false" ] || set -- --prerelease
+            gh release create "$TAG" --verify-tag --draft "$@" --title "$PROJECT $TAG" --notes-file "docs/releases/$TAG.md"
+          fi
+          expected_body=$(cat "docs/releases/$TAG.md")
+          actual_body=$(gh release view "$TAG" --json body --jq .body)
+          [ "$actual_body" = "$expected_body" ] || { echo "draft body differs from the reviewed release note" >&2; exit 1; }
+          actual_title=$(gh release view "$TAG" --json name --jq .name)
+          [ "$actual_title" = "$PROJECT $TAG" ] || { echo "draft title differs from the release contract" >&2; exit 1; }
+          actual_prerelease=$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)
+          [ "$actual_prerelease" = "$prerelease" ] || { echo "draft prerelease state differs from SemVer" >&2; exit 1; }
+          gh release upload "$TAG" "$RUNNER_TEMP/release-assets"/* --clobber
+          expected=$(for path in "$RUNNER_TEMP/release-assets"/*; do basename -- "$path"; done | LC_ALL=C sort)
+          actual=$(gh release view "$TAG" --json assets --jq ".assets[].name" | LC_ALL=C sort)
+          [ "$actual" = "$expected" ] || { printf "draft asset set differs from the staged set\nexpected:\n%s\nactual:\n%s\n" "$expected" "$actual" >&2; exit 1; }

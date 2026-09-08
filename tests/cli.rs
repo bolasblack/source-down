@@ -1,4 +1,5 @@
 mod common;
+use source_down::platform::{symlink_dir, symlink_file};
 use std::process::Command;
 
 fn page(root: &std::path::Path, source: &str) -> String {
@@ -94,7 +95,7 @@ fn project_plugin(dir: &std::path::Path, name: &str, overrides: bool, body: &str
     std::fs::write(
         dir.join("plugin.py"),
         common::plugin(&format!(
-            "open('calls','a').write(str(len(b['requests']))+'\\n')\n{body}\n"
+            "open('calls','a',newline=chr(10)).write(str(len(b['requests']))+'\\n')\n{body}\n"
         )),
     )
     .unwrap();
@@ -103,7 +104,7 @@ fn project_plugin(dir: &std::path::Path, name: &str, overrides: bool, body: &str
     } else {
         String::new()
     };
-    std::fs::write(dir.join("source-down.toml"), format!("config_version = 1\n[plugins.project]\ncommand = [\"python3\", \"plugin.py\"]\ndirectives = [\"{name}\"]\n{override_line}")).unwrap();
+    std::fs::write(dir.join("source-down.toml"), format!("config_version = 1\n[plugins.project]\ncommand = [\"python\", \"plugin.py\"]\ndirectives = [\"{name}\"]\n{override_line}")).unwrap();
 }
 const ECHO: &str = "emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],'append':[],'reports':{},'diagnostics':[],'results':[{'id':r['id'],'status':'ok','markdown':str(r['arguments']['positional'][0]),'sources':[r['source']]} for r in reversed(b['requests'])]},sys.stdout)";
 
@@ -394,32 +395,40 @@ fn incomplete_or_invalid_plugin_results_leave_old_output_and_stdout_untouched() 
 #[test]
 fn selection_is_root_relative_deduplicated_and_excludes_generated_directories() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("src")).unwrap();
-    std::fs::create_dir_all(dir.path().join("nested/target")).unwrap();
-    std::fs::write(dir.path().join("src/a.rs"), "// visible\n").unwrap();
-    std::fs::write(dir.path().join("nested/target/bad.rs"), "/* unclosed").unwrap();
+    std::fs::create_dir_all(dir.path().join("nested/src")).unwrap();
+    std::fs::create_dir_all(dir.path().join("excluded-only/target")).unwrap();
+    std::fs::write(dir.path().join("nested/src/a.rs"), "// visible\n").unwrap();
+    std::fs::write(
+        dir.path().join("excluded-only/target/bad.rs"),
+        "/* unclosed",
+    )
+    .unwrap();
     std::fs::write(dir.path().join("skip.rs"), "/* unclosed").unwrap();
     std::fs::write(
         dir.path().join("source-down.toml"),
         "config_version=1\n[inputs]\nexclude=['skip.rs']\n",
     )
     .unwrap();
-    std::os::unix::fs::symlink("src/a.rs", dir.path().join("alias.txt")).unwrap();
-    std::os::unix::fs::symlink(".", dir.path().join("loop")).unwrap();
-    let all = invoke(dir.path(), &[".", "alias.txt", "src/a.rs"]);
+    symlink_file("nested/src/a.rs", dir.path().join("alias.txt")).unwrap();
+    symlink_dir("nested/src", dir.path().join("source-alias")).unwrap();
+    symlink_dir(".", dir.path().join("loop")).unwrap();
+    let all = invoke(
+        dir.path(),
+        &[".", "alias.txt", "source-alias", "nested/src/a.rs"],
+    );
     assert!(
         all.status.success(),
         "{}",
         String::from_utf8_lossy(&all.stderr)
     );
-    let all_page = page(dir.path(), "src/a.rs");
-    let one = invoke(dir.path(), &["src/a.rs"]);
+    let all_page = page(dir.path(), "nested/src/a.rs");
+    let one = invoke(dir.path(), &["nested/src/a.rs"]);
     assert!(all.stdout.is_empty() && one.stdout.is_empty());
-    assert_eq!(all_page, page(dir.path(), "src/a.rs"));
+    assert_eq!(all_page, page(dir.path(), "nested/src/a.rs"));
     let excluded = invoke(dir.path(), &["skip.rs"]);
     assert_eq!(excluded.status.code(), Some(1));
     assert!(excluded.stdout.is_empty());
-    let no_supported = invoke(dir.path(), &["nested"]);
+    let no_supported = invoke(dir.path(), &["excluded-only"]);
     assert_eq!(no_supported.status.code(), Some(1));
 }
 
@@ -439,7 +448,7 @@ fn publication_rejects_provenance_and_symlinks() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("source material"));
     assert_eq!(std::fs::read(&target).unwrap(), b"material bytes\n");
     std::fs::write(dir.path().join("a.rs"), "fn a() {}\n").unwrap();
-    std::os::unix::fs::symlink("review", dir.path().join("alias")).unwrap();
+    symlink_dir("review", dir.path().join("alias")).unwrap();
     assert_eq!(
         invoke(dir.path(), &["a.rs", "--output-dir", "alias"])
             .status
@@ -447,7 +456,7 @@ fn publication_rejects_provenance_and_symlinks() {
         Some(1)
     );
     std::fs::remove_file(&target).unwrap();
-    std::os::unix::fs::symlink("../../a.rs", &target).unwrap();
+    symlink_file("../../a.rs", &target).unwrap();
     assert_eq!(
         invoke(dir.path(), &["a.rs", "--output-dir", "review"])
             .status

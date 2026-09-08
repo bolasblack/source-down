@@ -1,9 +1,10 @@
 ---
-title: "以单个会话 I/O 驱动管理常驻插件"
+title: 以单个会话 I/O 驱动管理常驻插件
 description: 以 std 线程、通道和 poll 复用插件进程，同时保持逐轮文件事实、统一结果校验与显式关闭的边界。
 tags: architecture, conformance
 updates: AGD-002
 related: AGD-006, AGD-008
+updated_by: AGD-012
 ---
 
 ## Context

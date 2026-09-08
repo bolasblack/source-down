@@ -1,6 +1,5 @@
 """Run Rust and Python tests, generate reports, and enforce AGD-008 line coverage gates."""
 import argparse
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -127,6 +126,8 @@ def main():
         if arguments.check_only is not None:
             check_reports(arguments.check_only)
         else:
+            import fcntl
+
             state = ROOT / ".source-down"
             state.mkdir(exist_ok=True)
             with (state / "coverage.lock").open("w") as lock:

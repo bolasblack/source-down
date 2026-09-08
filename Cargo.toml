@@ -21,8 +21,13 @@ toml = "=0.9.8"
 # Pin the grammar, because newer compatible releases accept TOML 1.1.
 toml_parser = "=1.0.5"
 libc = "=0.2.177"
-signal-hook = "=0.3.18"
 tempfile = "=3.23.0"
+
+[target.'cfg(unix)'.dependencies]
+signal-hook = "=0.3.18"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
 
 [profile.release]
 lto = "thin"

@@ -1,5 +1,7 @@
 //! Project-owned names are validated before any plugin runs. SPEC-CLI-003.
-use crate::model::{Error, Result, SourceFile, SourceStore, line_number, validate_relative_path};
+use crate::model::{
+    Error, Result, SourceFile, SourceStore, line_number, path_text, validate_relative_path,
+};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -250,12 +252,15 @@ pub fn load(sources: &mut SourceStore, explicit: Option<&Path>) -> Result<Config
     })
 }
 
+pub(crate) const EXCLUDED_DIRECTORY_NAMES: [&str; 4] =
+    [".git", "target", "node_modules", ".source-down"];
+
 fn excluded(path: &str, config: &Config) -> bool {
     let components: Vec<_> = path.split('/').collect();
     // Known directory names: a file with one of these names has no supported extension.
     components
         .iter()
-        .any(|c| [".git", "target", "node_modules", ".source-down"].contains(c))
+        .any(|c| EXCLUDED_DIRECTORY_NAMES.contains(c))
         || config
             .inputs
             .exclude
@@ -264,6 +269,17 @@ fn excluded(path: &str, config: &Config) -> bool {
 }
 fn supported(path: &Path) -> bool {
     crate::source::is_markdown(path) || crate::lang::select(path).is_some()
+}
+
+pub(crate) fn exclude_outputs(config: &mut Config, root: &Path, output: &Path) {
+    for child in ["pages", "reports"] {
+        config
+            .inputs
+            .exclude
+            .push(path_text(output.join(child).strip_prefix(root).unwrap()).unwrap());
+    }
+    config.inputs.exclude.sort();
+    config.inputs.exclude.dedup();
 }
 
 // {% spec "cli-002" %}
@@ -281,13 +297,11 @@ pub fn select(sources: &SourceStore, config: &Config, paths: &[PathBuf]) -> Resu
         let relative = actual
             .strip_prefix(&sources.root)
             .map_err(|_| Error::new(format!("{}: outside project root", path.display())))?;
-        let name = relative
-            .to_str()
-            .ok_or_else(|| Error::new("input path is not UTF-8"))?;
+        let name = path_text(relative)?;
         if !name.is_empty() {
-            validate_relative_path(name)?;
+            validate_relative_path(&name)?;
         }
-        if excluded(name, config) {
+        if excluded(&name, config) {
             return if explicit {
                 Err(Error::new(format!("{name}: excluded input")))
             } else {

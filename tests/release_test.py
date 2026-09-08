@@ -1,4 +1,5 @@
 """Check actual release archives, including relative links and extraction confinement."""
+import os
 from pathlib import Path
 import tarfile
 import tempfile
@@ -24,7 +25,8 @@ class ReleaseArchiveTest(unittest.TestCase):
             extract_files(archive_path, destination)
             self.assertEqual((destination / "package/CLAUDE.md").readlink(), Path("AGENTS.md"))
             self.assertEqual((destination / "package/CLAUDE.md").read_text(), "project instructions\n")
-            self.assertEqual((destination / "package/run").stat().st_mode & 0o777, 0o755)
+            if os.name == "posix":
+                self.assertEqual((destination / "package/run").stat().st_mode & 0o777, 0o755)
 
             outside = root / "outside"
             outside.write_text("keep these bytes")

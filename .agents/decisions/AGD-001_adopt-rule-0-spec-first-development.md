@@ -2,7 +2,7 @@
 title: 采用 Rule 0 规范优先开发
 description: 以唯一产品规范定义可观察结果，以实现、测试和真实边界证据验证投影，并限制单次审查所需上下文。
 tags: conformance
-updated_by: AGD-010
+updated_by: AGD-010, AGD-013
 ---
 
 ## Context

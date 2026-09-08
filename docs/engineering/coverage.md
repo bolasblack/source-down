@@ -12,6 +12,28 @@ mise run check
 `lint` runs formatting, Clippy, documentation and AGD checks. `check` depends on both `lint` and `test`.
 mise shares the same test task when these entry points are requested together.
 
+## Continuous integration
+
+The [test workflow](../../.github/workflows/test.yml) runs on pushes, pull requests and manual dispatch
+using Ubuntu 24.04, macOS 15 and Windows Server 2022. Each native runner builds all
+binaries and examples, runs the complete Cargo test collection (including the E2E
+bridge), discovers all Python `*_test.py` tests, and runs formatting and Clippy.
+Platform-specific syscall and signal fixtures declare their actual applicability;
+the shared native portability suite runs on all three systems.
+
+Linux also runs the existing `mise run test` coverage gates, documentation lint,
+review and benchmark tasks. macOS and Windows run the same Cargo and Python test
+collections without coverage collection, following the development acceptance
+scope in [AGD-012](../../.agents/decisions/AGD-012_release-native-platform-artifacts.md).
+The matrix completes every operating system even when another fails, and retains
+check command logs, E2E run evidence and available coverage reports
+after failures. Command logging preserves the original failure status.
+
+CI installs the pinned mise tools from scratch. The action's cache does not
+include the rustup toolchains referenced by mise's Rust installation; restoring
+only those links loses the configured components. See the upstream
+[Rust cache issue](https://github.com/jdx/mise-action/issues/215).
+
 ## Denominators and thresholds
 
 | Scope | Production files | Required line coverage |
@@ -34,7 +56,11 @@ Each scope must pass separately. Adding test source to a report cannot increase 
 The Python tool lives in `.source-down/coverage-env`, separate from the project's runtime plugin environment.
 
 [test.py](../../tools/test.py) obtains instrumentation settings from `cargo llvm-cov show-env`, builds the CLI and spec plugin,
-and runs Cargo tests. Real CLI and Rust plugin subprocesses inherit the profile destination; the existing self-use test exercises the instrumented artifacts too.
+and runs Cargo tests. Real CLI and Rust plugin subprocesses inherit the profile destination;
+the explicit Cargo `e2e` target runs the same readable scenarios once against the instrumented CLI.
+Its coordinator records the exact executable hashes and inherited profile destinations.
+The Python tool suite uses `*_test.py`, which does not rediscover E2E `test_*.py` files.
+E2E reading generation is omitted from this bridge and requested separately by `mise run acceptance`.
 Python tests execute the metadata plugin through its actual stdin/stdout protocol; coverage.py's subprocess patch collects those child processes.
 The compiler wrapper is tested by compiling and running a Rust probe and verifying its emitted profile.
 

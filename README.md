@@ -115,7 +115,7 @@ mise run check       # Both lint and test
 mise run lint        # Formatting, Clippy, documentation, and AGD independence
 mise run test        # All tests, HTML/JSON reports, and 90% line coverage gates
 mise run review      # Pages, reports and search snapshot for the complete project
-mise run acceptance  # Real plugins, self-use, and fault injection in a temporary copy
+mise run acceptance  # Readable E2E, real plugins, self-use, and recorded fault injection
 mise run benchmark   # Generation, search/read stages, scale and memory budgets
 mise run release     # Local binary/source archives, extraction checks, and SHA-256
 ```
@@ -124,6 +124,13 @@ Line coverage must reach 90% separately for the Rust core, the Rust spec plugin,
 Both unit and integration tests contribute, including real CLI and plugin processes. `test` prepares the isolated Python coverage environment automatically; `check` depends on both `lint` and `test`.
 Reports appear in `.source-down/coverage/`; see the [measurement scope and report guide](docs/engineering/coverage.md).
 Spec reference coverage remains a separate check of clause usage.
+
+`acceptance` prints absolute paths to this run's results and generated reading entry
+under `.source-down/e2e/runs/<run-id>/`. The entry groups scenarios by workflow and
+links their actual status, preserved source and owning clauses. Use
+`mise exec -- python tools/acceptance.py --case search --review` for a partial run,
+or `--list` for discovery only. See the [E2E writing and execution guide](tests-e2e/README.md)
+and [migration ledger](docs/engineering/e2e-migration.md) for retained native evidence.
 
 To start a new repository, extract the source archive or copy the versioned project files from this directory. Build caches, development toolchains, and generated material live in the ignored `target/`, `.source-down/`, and `dist/` directories and can be recreated in the destination. See the [release acceptance record](docs/engineering/verification.md) for measured verification results and performance baselines.
 

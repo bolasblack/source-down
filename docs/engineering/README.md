@@ -6,6 +6,9 @@ The project has a buildable Rust CLI, built-in plugins, an external plugin proto
 The current include parameter surface is checked in [include selection acceptance](include-selection-verification.md).
 Search contracts, real boundary evidence, predeclared queries and measurement budgets are tracked in [search acceptance](search-verification.md).
 The current default snapshot publication, short handles and direct file reads are checked in [CLI and file-read acceptance](search-cli-verification.md).
+The [readable E2E contract](e2e.md), [migration ledger](e2e-migration.md) and
+[delivery record](e2e-verification.md) describe the shared Python acceptance collection,
+retained native tests, development order and per-run reading artifacts.
 
 ## Technology and module boundaries
 
@@ -91,7 +94,7 @@ The example shows how to register arbitrary project names. This project's actual
 See the [syntax specification](../specs/directives.md) for directive notation and parsing precedence, and
 [AGD-004](../../.agents/decisions/AGD-004_use-explicit-directives-and-json-arguments.md) for the design rationale.
 Review output can go in `.source-down/`, which is excluded from inputs by default.
-Use `mise run review` to process `src tools tests examples docs/guide` in one invocation, producing separate pages and a spec coverage report. Record acceptance results as required by [AGD-003](../../.agents/decisions/AGD-003_use-source-down-for-its-own-review.md) and [AGD-007](../../.agents/decisions/AGD-007_check-spec-references-through-a-project-plugin.md).
+Use `mise run review` to process `src tools tests tests-e2e examples docs/guide` in one invocation, producing separate pages and a spec coverage report. Record acceptance results as required by [AGD-003](../../.agents/decisions/AGD-003_use-source-down-for-its-own-review.md) and [AGD-007](../../.agents/decisions/AGD-007_check-spec-references-through-a-project-plugin.md).
 
 ## Performance verification
 
@@ -110,4 +113,4 @@ Keep a single owning clause for each requirement in the specifications; referenc
 relative links, and agreement between plugin JSON examples and field tables. AGDs preserve self-contained decisions; keep links to current product clauses and implementation files here in engineering documentation. Generate AGD indexes with the bundled framework scripts, setting
 `CLAUDE_PROJECT_DIR` to the new repository root when running them.
 
-The [authored guide](../guide/index.md) is included in the complete review task. Its links target generated chapter filenames and explicit display anchors. `tools/acceptance.py` verifies these targets against the current output set under both default and custom output roots, checks repeated source provenance, and mutates referenced declarations in a temporary checkout.
+The [authored guide](../guide/index.md) is included in the complete review task. Its links target generated chapter filenames and explicit display anchors. The readable `self_use` and `search` cases verify these targets against the current output set under both default and custom output roots, check repeated source provenance, and mutate referenced declarations in temporary projects. `tools/acceptance.py` discovers and runs the preserved case copy; `mise run acceptance` additionally renders its results and scenarios to a unique `.source-down/e2e/runs/<run-id>/reading` directory.

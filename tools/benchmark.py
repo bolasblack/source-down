@@ -112,7 +112,7 @@ def measure_search(binary, launcher, temporary):
         (enlarged / "docs" / f"{number:03}.md").write_text(text)
     cases = []
     for name, root, selections, query, file, selector in [
-        ("self_use", ROOT, ["src", "tools", "tests", "examples", "docs/guide"], "SourceStore", "src/model.rs", '["SourceStore",0]'),
+        ("self_use", ROOT, ["src", "tools", "tests", "tests-e2e", "examples", "docs/guide"], "SourceStore", "src/model.rs", '["SourceStore",0]'),
         ("enlarged_fixture", enlarged, ["docs"], "重试 RetryPolicy", "docs/000.md", '["Retry policy",0]'),
     ]:
         budget = baseline["budgets"][name]

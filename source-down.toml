@@ -1,5 +1,8 @@
 config_version = 1
 
+[inputs]
+exclude = ["tests-e2e/fixtures"]
+
 [plugins.project]
 command = ["python", "tools/project_docs.py"]
 directives = ["package", "modules", "api"]

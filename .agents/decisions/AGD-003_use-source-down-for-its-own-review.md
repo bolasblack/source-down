@@ -3,7 +3,7 @@ title: 以 Source Down 自己的代码完成首个正式使用场景
 description: 首版以自身源码完成阅读生成，以项目自定义插件验证通用扩展协议、真实进程边界和稳定输出。
 tags: conformance, self-hosting
 related: AGD-001, AGD-002
-updated_by: AGD-005, AGD-007
+updated_by: AGD-005, AGD-007, AGD-013
 ---
 
 ## Context

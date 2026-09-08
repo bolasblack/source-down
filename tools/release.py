@@ -22,7 +22,7 @@ except ImportError:  # Direct script entry point.
 
 ROOT = Path(__file__).resolve().parents[1]
 MEMBERS = ("Cargo.toml", "Cargo.lock", ".mise.toml", "source-down.toml",
-           "README.md", "AGENTS.md", "CLAUDE.md", ".gitignore", ".agents", "src", "tests", "docs", "examples", "tools")
+           "README.md", "AGENTS.md", "CLAUDE.md", ".gitignore", ".agents", "src", "tests", "tests-e2e", "docs", "examples", "tools")
 
 
 def command(*args, **kwargs):
@@ -176,11 +176,19 @@ def verify_source(source_archive, unpacked, source_name, extracted_binary):
     command("mise", "run", "build", cwd=source_root, env=build_env)
     suffix = ".exe" if os.name == "nt" else ""
     plugin = source_root / "target/release/examples" / f"spec-plugin{suffix}"
-    print(command("mise", "exec", "--", "python", "tools/build.py", "--", "python", "tools/acceptance.py",
-                  "--binary", extracted_binary, "--spec-plugin", plugin, cwd=source_root, env=build_env).decode().strip())
+    try:
+        print(command("mise", "exec", "--", "python", "tools/build.py", "--", "python", "tools/acceptance.py",
+                      "--binary", extracted_binary, "--spec-plugin", plugin, cwd=source_root, env=build_env).decode().strip())
+    finally:
+        # Both failed and successful runs survive the disposable checkout's cleanup.
+        # Run IDs and relative reading/source links remain unchanged.
+        for result in sorted((source_root / ".source-down/e2e/runs").glob("*/results.json")):
+            saved = ROOT / ".source-down/e2e/runs" / result.parent.name
+            shutil.copytree(result.parent, saved)
+            print(f"Relocated E2E results retained: {saved / 'results.json'}", flush=True)
 
     def render_snapshot(executable):
-        command(executable, "render", "src", "tools", "tests", "examples", "docs/guide", "--root", source_root, cwd=unpacked)
+        command(executable, "render", "src", "tools", "tests", "tests-e2e", "examples", "docs/guide", "--root", source_root, cwd=unpacked)
         output = source_root / ".source-down"
         return {p.relative_to(output).as_posix(): p.read_bytes() for p in sorted(output.rglob("*.md"))}
 

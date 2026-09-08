@@ -34,3 +34,7 @@ decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md -(
 decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md -(r)-> decisions/AGD-010_keep-decisions-self-contained-and-separate-lint.md
 decisions/AGD-012_release-native-platform-artifacts.md -(u)-> decisions/AGD-005_use-mise-and-ship-six-input-languages.md
 decisions/AGD-012_release-native-platform-artifacts.md -(u)-> decisions/AGD-009_own-persistent-plugin-processes-in-one-session-driver.md
+decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(u)-> decisions/AGD-001_adopt-rule-0-spec-first-development.md
+decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(u)-> decisions/AGD-003_use-source-down-for-its-own-review.md
+decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(r)-> decisions/AGD-008_enforce-ninety-percent-test-coverage.md
+decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(r)-> decisions/AGD-010_keep-decisions-self-contained-and-separate-lint.md

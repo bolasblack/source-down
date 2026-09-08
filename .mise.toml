@@ -44,12 +44,12 @@ depends = ["lint", "test"]
 [tasks.review]
 description = "Render the complete project and authored guide"
 depends = ["build"]
-run = "target/release/source-down render src tools tests examples docs/guide"
+run = "target/release/source-down render src tools tests tests-e2e examples docs/guide"
 
 [tasks.acceptance]
-description = "Verify self-use and real plugin boundaries in a temporary copy"
+description = "Run readable E2E scenarios and render this run's acceptance results"
 depends = ["build"]
-run = "python tools/acceptance.py"
+run = "python tools/acceptance.py --review"
 
 [tasks.benchmark]
 description = "Measure generation, search and read stages against recorded budgets"

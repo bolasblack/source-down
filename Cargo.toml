@@ -37,6 +37,10 @@ strip = true
 
 [workspace]
 
+[[test]]
+name = "e2e"
+path = "tests-e2e/bridge.rs"
+
 [[example]]
 name = "spec-plugin"
 path = "tools/spec_plugin.rs"

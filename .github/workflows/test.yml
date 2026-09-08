@@ -1,0 +1,75 @@
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Preserve source bytes and links
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.symlinks true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
+        with:
+          version: "2026.6.2"
+          install: "true"
+          # mise's cache omits the rustup toolchains behind its Rust links.
+          cache: "false"
+      - name: Formatting and Clippy
+        run: |
+          mkdir -p .source-down/test-logs
+          cargo fmt --all -- --check 2>&1 | tee .source-down/test-logs/formatting.log
+          python tools/build.py -- cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee .source-down/test-logs/clippy.log
+      - name: All tests and coverage gates
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p .source-down/test-logs
+          mise run test 2>&1 | tee .source-down/test-logs/tests.log
+      - name: All native tests
+        if: runner.os != 'Linux'
+        run: |
+          mkdir -p .source-down/test-logs
+          python tools/build.py -- cargo build --locked --bins --examples 2>&1 | tee .source-down/test-logs/build.log
+          python tools/build.py -- cargo test --locked 2>&1 | tee .source-down/test-logs/rust.log
+          python tools/build.py -- python -m unittest discover -s tests -p '*_test.py' 2>&1 | tee .source-down/test-logs/python.log
+      - name: Documentation, self-review and benchmark gates
+        if: runner.os == 'Linux'
+        run: |
+          python tools/check_docs.py 2>&1 | tee .source-down/test-logs/documentation.log
+          mise run review 2>&1 | tee .source-down/test-logs/review.log
+          mise run benchmark 2>&1 | tee .source-down/test-logs/benchmark.log
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: test-evidence-${{ matrix.os }}
+          path: |
+            .source-down/test-logs/
+            .source-down/e2e/runs/
+            .source-down/coverage/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7

@@ -110,7 +110,7 @@ def measure(output):
     run(coverage + ["combine", config], env)
     run(coverage + ["json", config, "-o", str(output / "python.json")], env)
     run(coverage + ["html", config, "-d", str(output / "python-html")], env)
-    rust = ["cargo", "llvm-cov", "report", "--ignore-filename-regex", "/(tests|examples)/"]
+    rust = ["cargo", "llvm-cov", "report", "--ignore-filename-regex", "/(tests|tests-e2e|examples)/"]
     run(rust + ["--json", "--output-path", str(output / "rust.json")], env)
     run(rust + ["--html", "--output-dir", str(output / "rust")], env)
     check_reports(output)

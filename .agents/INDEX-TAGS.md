@@ -15,3 +15,4 @@ decisions/AGD-009_own-persistent-plugin-processes-in-one-session-driver.md: #arc
 decisions/AGD-010_keep-decisions-self-contained-and-separate-lint.md: #conformance, #tooling
 decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md: #architecture, #conformance, #self-hosting
 decisions/AGD-012_release-native-platform-artifacts.md: #architecture, #tooling, #conformance
+decisions/AGD-013_readable-e2e-with-one-execution-owner.md: #conformance, #self-hosting, #tooling

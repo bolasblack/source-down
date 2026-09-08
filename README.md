@@ -57,7 +57,22 @@ The render CLI validates a complete round and closes every external plugin befor
 An expanded directive has a **Call site** paragraph linking to its position in the source, followed by **Content source** paragraphs linking to the material returned by the plugin.
 Paths appear as inline code inside links, preserving punctuation. The core renders these annotations from each content block's source spans, then places that block's Markdown immediately below them.
 
-Read the authored [three-chapter guide](docs/guide/index.md), then run `mise run review` and open `.source-down/pages/docs/guide/index.md.md`. Its navigation targets generated pages and explicit display anchors. Included material stays literal: directives inside returned Markdown or quoted source are not executed again.
+Read the authored [authored guide](docs/guide/index.md), then run `mise run review` and open `.source-down/pages/docs/guide/index.md.md`. Its navigation targets generated pages and explicit display anchors. Included material stays literal: directives inside returned Markdown or quoted source are not executed again.
+
+Build pages and their search snapshot with `source-down render src docs`, then query with
+`source-down search SourceStore --path src`. Pass a returned 11-character handle to
+`source-down read HANDLE --context 1` to read the exact stored fragment and its neighbours.
+Both commands support `--json`, bounded results and continuation. They check current
+files and outputs by default; `--snapshot` reads saved content with unchecked source links.
+See [search and continued reading](docs/guide/searching.md) for scope, repeated occurrences
+and pagination. `mise run review` builds the complete project's search snapshot.
+
+For a known file and declaration, use `source-down read src/cache.py --id 'Cache.get'`
+or `source-down read docs/retry.md --id '["重试策略",0]'`. This reads the current entity or
+complete Markdown section directly, with its source span and file SHA-256; it needs no
+configuration, plugin or index. Both read modes use a fixed 12000-character Unicode
+budget and byte offsets. Compare file hashes and selected spans before joining chunks
+from separate current-file calls. Add `--json` for structured output.
 
 ## Project extensions
 
@@ -99,9 +114,9 @@ Plugins can return ordered `text` and `standard_call` nodes in `content` for a r
 mise run check       # Both lint and test
 mise run lint        # Formatting, Clippy, documentation, and AGD independence
 mise run test        # All tests, HTML/JSON reports, and 90% line coverage gates
-mise run review      # .source-down/pages and reports: own source, tools, tests, examples, and docs/guide
+mise run review      # Pages, reports and search snapshot for the complete project
 mise run acceptance  # Real plugins, self-use, and fault injection in a temporary copy
-mise run benchmark   # Six workloads with raw measurements saved
+mise run benchmark   # Generation, search/read stages, scale and memory budgets
 mise run release     # Local binary/source archives, extraction checks, and SHA-256
 ```
 

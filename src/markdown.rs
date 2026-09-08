@@ -104,6 +104,10 @@ fn preceding_anchor<'a>(
     {
         return None;
     }
+    anchor_id(line).map(|anchor| (start, anchor))
+}
+
+pub(crate) fn anchor_id(line: &str) -> Option<&str> {
     let anchor = line
         .trim_matches([' ', '\t'])
         .strip_prefix("<a id=\"")?
@@ -115,5 +119,5 @@ fn preceding_anchor<'a>(
     {
         return None;
     }
-    Some((start, anchor))
+    Some(anchor)
 }

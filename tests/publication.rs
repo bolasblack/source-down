@@ -38,13 +38,21 @@ int close(int fd) {
         "{}",
         String::from_utf8_lossy(&compiled.stderr)
     );
+    std::fs::write(dir.path().join("a.rs"), "// old content\n").unwrap();
+    let baseline = std::process::Command::new(env!("CARGO_BIN_EXE_source-down"))
+        .args(["render", "a.rs", "--root"])
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        baseline.status.success(),
+        "{}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
+    let index_path = dir.path().join(".source-down/search/index.json");
+    let old_index = std::fs::read(&index_path).unwrap();
+    let old_page = std::fs::read(dir.path().join(".source-down/pages/a.rs.md")).unwrap();
     std::fs::write(dir.path().join("a.rs"), "// new content\n").unwrap();
-    std::fs::create_dir_all(dir.path().join(".source-down/pages")).unwrap();
-    std::fs::write(
-        dir.path().join(".source-down/pages/a.rs.md"),
-        "old content\n",
-    )
-    .unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_source-down"))
         .args(["render", "a.rs", "--root"])
         .arg(dir.path())
@@ -59,9 +67,10 @@ int close(int fd) {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(output.stdout.is_empty());
+    assert_eq!(std::fs::read(&index_path).unwrap(), old_index);
     assert_eq!(
         std::fs::read(dir.path().join(".source-down/pages/a.rs.md")).unwrap(),
-        b"old content\n"
+        old_page
     );
     assert!(
         !std::fs::read_dir(dir.path().join(".source-down/pages"))

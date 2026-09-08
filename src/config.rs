@@ -2,12 +2,12 @@
 use crate::model::{
     Error, Result, SourceFile, SourceStore, line_number, path_text, validate_relative_path,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub config_version: u32,
@@ -28,13 +28,13 @@ impl Default for Config {
         }
     }
 }
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Inputs {
     #[serde(default)]
     pub exclude: Vec<String>,
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExternalConfig {
     pub command: Vec<String>,
@@ -272,7 +272,7 @@ fn supported(path: &Path) -> bool {
 }
 
 pub(crate) fn exclude_outputs(config: &mut Config, root: &Path, output: &Path) {
-    for child in ["pages", "reports"] {
+    for child in ["pages", "reports", "search"] {
         config
             .inputs
             .exclude

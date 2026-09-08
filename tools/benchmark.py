@@ -96,7 +96,68 @@ def measure(binary):
                     "plugin_request_counts": counts, "output_bytes": sum(map(len, final.values())),
                     "maximum_frame_bytes": max(map(int,(root / "frames").read_text().splitlines())) if mode != "none" else 0}
                 report["cases"].append(case)
+        report["search"] = measure_search(binary, launcher, Path(temporary))
     return report
+
+
+def measure_search(binary, launcher, temporary):
+    baseline = json.loads((ROOT / "docs/engineering/search-baseline.json").read_text())
+    enlarged = temporary / "search-enlarged"
+    (enlarged / "docs").mkdir(parents=True)
+    fixture = baseline["enlarged_fixture"]
+    (enlarged / "shared.md").write_text("# Shared\n\nRepeated RetryPolicy material.\n")
+    for number in range(fixture["files"]):
+        text = fixture["paragraph"] * fixture["paragraphs_per_file"]
+        text += '{% include "shared.md" id="Shared" %}\n\n' * (fixture["repeated_includes"] // fixture["files"])
+        (enlarged / "docs" / f"{number:03}.md").write_text(text)
+    cases = []
+    for name, root, selections, query, file, selector in [
+        ("self_use", ROOT, ["src", "tools", "tests", "examples", "docs/guide"], "SourceStore", "src/model.rs", '["SourceStore",0]'),
+        ("enlarged_fixture", enlarged, ["docs"], "重试 RetryPolicy", "docs/000.md", '["Retry policy",0]'),
+    ]:
+        budget = baseline["budgets"][name]
+        def timed(arguments, seconds):
+            path = temporary / "search-measure.json"
+            result = subprocess.run([str(launcher), str(path), *map(str, arguments)], capture_output=True, timeout=seconds + 10)
+            assert result.returncode == 0, result.stderr.decode(errors="replace")
+            metrics = json.loads(path.read_text())
+            assert metrics["wall_seconds"] <= seconds, (name, metrics, "time budget")
+            assert metrics["max_rss_kib"] <= budget["peak_rss_kib"], (name, metrics, "RSS budget")
+            return metrics, result.stdout
+        builds = []
+        for repeat in range(2):
+            metrics, _ = timed([binary, "render", *selections, "--root", root], budget["build_seconds"])
+            builds.append({"kind": "first" if repeat == 0 else "repeat", **metrics})
+        index_path = root / ".source-down/search/index.json"
+        index = json.loads(index_path.read_bytes())
+        queries = []
+        for repeat in range(3):
+            metrics, output = timed([binary.parent / "examples/search-benchmark", root, query, file, selector], budget["query_seconds"])
+            queries.append({"kind": "first" if repeat == 0 else "repeat", **metrics, **json.loads(output)})
+        found = subprocess.run([str(binary), "search", query, "--root", str(root), "--json"], capture_output=True, check=True)
+        handle = json.loads(found.stdout)["hits"][0]["handle"]
+        reads = []
+        for repeat in range(2):
+            metrics, output = timed([binary, "read", handle, "--root", root, "--json"], budget["read_seconds"])
+            reads.append({"kind": "first" if repeat == 0 else "repeat", **metrics, "result_bytes": len(output)})
+        file_reads = []
+        for repeat in range(2):
+            metrics, output = timed([binary, "read", file, "--id", selector, "--root", root, "--json"], budget["read_seconds"])
+            result = json.loads(output)
+            assert result["mode"] == "file" and result["source"]["path"] == file
+            file_reads.append({"kind": "first" if repeat == 0 else "repeat", **metrics, "result_bytes": len(output)})
+        occurrences = sum(len(record["occurrences"]) for record in index["records"])
+        cases.append({"name": name, "input_files": len(index["manifest"]["input_files"]),
+            "input_bytes": sum((root / path).stat().st_size for path in index["manifest"]["input_files"]),
+            "source_bytes": sum((root / path).stat().st_size for path in index["manifest"]["sources"]),
+            "records": len(index["records"]), "occurrences": occurrences,
+            "deduplicated_occurrences": occurrences - len(index["records"]), "index_bytes": index_path.stat().st_size,
+            "builds": builds, "queries": queries, "reads": reads, "file_reads": file_reads,
+            "file_selection": {"file": file, "id": json.loads(selector), "file_bytes": (root / file).stat().st_size}, "budget": budget})
+    return {"cache_conditions": "fresh processes, OS caches retained; build includes generation and publication",
+        "result_stage": "snippet/JSON construction is result_seconds; serialization_seconds measures JSON encoding separately",
+        "file_read_stage": "file_select_seconds includes fresh file bytes, parse, selection, hash and slicing; file_reads measures the independent CLI; existing read_seconds budget applies",
+        "cases": cases}
 
 
 if __name__ == "__main__":
@@ -107,4 +168,4 @@ if __name__ == "__main__":
     report = measure(args.binary.resolve(strict=True))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
-    print(f"benchmark: PASS (6 workloads × 3 CLI runs plus 3 rounds per session); {args.output}")
+    print(f"benchmark: PASS (6 generation workloads plus self-use/enlarged search stages and budgets); {args.output}")

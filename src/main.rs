@@ -19,6 +19,54 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Read a snapshot handle, or a current file's entity/section with --id
+    Read {
+        target: String,
+        /// Select a current file's entity/section by name or JSON structural path
+        #[arg(long, conflicts_with_all=["snapshot","cursor","context","occurrence","config","output_dir"])]
+        id: Option<String>,
+        /// UTF-8 byte offset returned by the previous read
+        #[arg(long)]
+        offset: Option<usize>,
+        /// Adjacent fragments on each side (0..5, default: 0)
+        #[arg(long)]
+        context: Option<usize>,
+        /// Choose an occurrence before expanding repeated content
+        #[arg(long)]
+        occurrence: Option<String>,
+        /// Continue a sources, occurrences or input_files list
+        #[arg(long, conflicts_with_all=["offset","context","occurrence"])]
+        cursor: Option<String>,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        snapshot: bool,
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+    },
+    /// Find fragments in the last complete generation snapshot
+    Search {
+        query: String,
+        #[arg(long)]
+        path: Option<String>,
+        #[arg(long, default_value="10", value_parser=clap::value_parser!(u32).range(1..=100))]
+        limit: u32,
+        #[arg(long)]
+        json: bool,
+        /// Read stored content without checking current project files
+        #[arg(long)]
+        snapshot: bool,
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+    },
     /// Render each source file into its own Markdown page
     Render {
         #[arg(required = true, num_args = 1..)]
@@ -29,7 +77,7 @@ enum Commands {
         /// TOML configuration (default: source-down.toml when present)
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Output root containing pages/ and reports/ (default: .source-down)
+        /// Output root containing pages/, reports/ and search/ (default: .source-down)
         #[arg(long)]
         output_dir: Option<PathBuf>,
     },
@@ -43,6 +91,70 @@ fn main() {
         std::process::exit(1);
     }
     let result = match cli.command {
+        Commands::Read {
+            target,
+            id,
+            offset,
+            context,
+            occurrence,
+            cursor,
+            json,
+            snapshot,
+            root,
+            config,
+            output_dir,
+        } => {
+            if let Some(id) = id {
+                source_down::search::read_file(&root, &target, &id, offset, &cancelled).and_then(
+                    |result| {
+                        source_down::search::print_file_result(
+                            &result, json, &root, &target, &id, &cancelled,
+                        )
+                    },
+                )
+            } else {
+                let options = source_down::search::ReadOptions {
+                    offset,
+                    context,
+                    occurrence,
+                    cursor,
+                };
+                options
+                    .validate()
+                    .and_then(|()| {
+                        source_down::search::Reader::open(
+                            &root,
+                            config.as_deref(),
+                            output_dir.as_deref(),
+                            snapshot,
+                            cancelled.clone(),
+                        )
+                    })
+                    .and_then(|reader| reader.read(&target, &options))
+                    .and_then(|result| source_down::search::print_result(&result, json, &cancelled))
+            }
+        }
+        Commands::Search {
+            query,
+            path,
+            limit,
+            json,
+            snapshot,
+            root,
+            config,
+            output_dir,
+        } => source_down::search::validate_query(&query, path.as_deref(), limit as usize)
+            .and_then(|()| {
+                source_down::search::Reader::open(
+                    &root,
+                    config.as_deref(),
+                    output_dir.as_deref(),
+                    snapshot,
+                    cancelled.clone(),
+                )
+            })
+            .and_then(|reader| reader.query(&query, path.as_deref(), limit as usize))
+            .and_then(|result| source_down::search::print_result(&result, json, &cancelled)),
         Commands::Render {
             root,
             config,

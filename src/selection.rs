@@ -1,6 +1,47 @@
 //! Structural paths select direct children in original source order. SPEC-BLT-007.
 use serde_json::Value;
 use std::ops::Range;
+use std::sync::Arc;
+
+/// A parsed material retains the bytes used to build its selection tree.
+pub(crate) struct Material {
+    file: Arc<crate::model::SourceFile>,
+    language: Option<&'static str>,
+    tree: Tree,
+}
+
+pub(crate) struct Selected<'a> {
+    pub file: &'a crate::model::SourceFile,
+    pub range: Range<usize>,
+    pub language: Option<&'static str>,
+}
+
+impl Material {
+    pub fn new(file: Arc<crate::model::SourceFile>) -> ContentResult<Self> {
+        let language = crate::lang::select(std::path::Path::new(&file.path));
+        let tree = if let Some(language) = &language {
+            language
+                .adapter
+                .entities(&file)
+                .map_err(|error| Failure::new("source_error", error.to_string()))?
+        } else {
+            markdown(&crate::markdown::sections(&file.text))
+        };
+        Ok(Self {
+            file,
+            language: language.map(|language| language.label),
+            tree,
+        })
+    }
+
+    pub fn select(&self, steps: &[Step]) -> ContentResult<Selected<'_>> {
+        Ok(Selected {
+            file: &self.file,
+            range: self.tree.select(steps)?,
+            language: self.language,
+        })
+    }
+}
 
 pub(crate) struct Failure {
     pub code: &'static str,

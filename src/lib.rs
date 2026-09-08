@@ -19,5 +19,6 @@ pub mod platform;
 mod publication;
 pub mod render;
 pub mod results;
+pub mod search;
 mod selection;
 pub mod source;

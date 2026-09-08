@@ -52,7 +52,7 @@ depends = ["build"]
 run = "python tools/acceptance.py"
 
 [tasks.benchmark]
-description = "Measure six workloads and save raw results"
+description = "Measure generation, search and read stages against recorded budgets"
 depends = ["build"]
 run = "python tools/build.py -- python tools/benchmark.py"
 

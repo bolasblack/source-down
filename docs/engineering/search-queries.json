@@ -1,0 +1,10 @@
+{
+  "declared_before_query_implementation": true,
+  "queries": [
+    {"query": "Markdown 适配器 注释", "path": "docs/guide", "kind": "prose", "top_k": 3, "expected_input": "docs/guide/reading-source.md", "reason": "The authored chapter explains Markdown and language comment classification."},
+    {"query": "完整 Markdown 上下文", "path": "docs/guide", "kind": "prose", "top_k": 3, "expected_input": "docs/guide/expanding-directives.md", "reason": "The chapter explains when directives are recognized."},
+    {"query": "来源 路径 标点", "path": "docs/guide", "kind": "prose", "top_k": 3, "expected_input": "docs/guide/building-pages.md", "reason": "The chapter explains source paths and literal punctuation."},
+    {"query": "SourceStore", "path": "src/model.rs", "kind": "code", "top_k": 1, "expected_input": "src/model.rs", "reason": "The actual type and its source ownership implementation."},
+    {"query": "code_span", "path": "src/render.rs", "kind": "code", "top_k": 1, "expected_input": "src/render.rs", "reason": "The complete identifier should locate the framing implementation."}
+  ]
+}

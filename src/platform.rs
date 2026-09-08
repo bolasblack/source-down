@@ -1,12 +1,12 @@
 //! Operating-system resources behind the shared code and native test fixtures.
 //! Only this module selects native implementations; its callers never handle OS resources.
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::sync::{Arc, atomic::AtomicBool};
 
-pub(crate) use native::{close, file_identity, replace_file, wait};
+pub(crate) use native::{Output, close, file_identity, file_kind, replace_file, wait};
 pub use native::{symlink_dir, symlink_file};
 
 /// Process lifetime as observed by the host, independently of protocol completion.
@@ -55,6 +55,19 @@ pub(crate) fn program_path(root: &Path, program: &str) -> PathBuf {
     } else {
         program.into()
     }
+}
+
+pub(crate) fn encoded_path(path: &Path) -> String {
+    use std::fmt::Write;
+    let mut result = String::new();
+    for byte in native::path_bytes(path) {
+        if byte.is_ascii_alphanumeric() || b"/.-_~".contains(&byte) {
+            result.push(byte as char);
+        } else {
+            write!(result, "%{byte:02X}").expect("writing a String");
+        }
+    }
+    result
 }
 
 /// Own a process scope and nonblocking pipes, including cleanup during failed setup.
@@ -119,8 +132,9 @@ mod native {
     pub use std::os::unix::fs::{symlink as symlink_dir, symlink as symlink_file};
     use std::os::{
         fd::{AsRawFd, IntoRawFd},
-        unix::{fs::MetadataExt, process::CommandExt},
+        unix::{ffi::OsStrExt, fs::MetadataExt, process::CommandExt},
     };
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
     pub(super) type Input = std::process::ChildStdin;
     pub(super) type Stdout = std::process::ChildStdout;
@@ -176,9 +190,18 @@ mod native {
         Ok(())
     }
 
+    pub(super) fn path_bytes(path: &Path) -> Vec<u8> {
+        path.as_os_str().as_bytes().to_vec()
+    }
     pub(crate) fn file_identity(path: &Path) -> io::Result<(u64, u64)> {
         let metadata = std::fs::metadata(path)?;
         Ok((metadata.dev(), metadata.ino()))
+    }
+    pub(crate) fn file_kind(metadata: &Metadata) -> u32 {
+        // S_IFMT is u16 on macOS and u32 on Linux.
+        #[allow(clippy::unnecessary_cast)]
+        let mask = libc::S_IFMT as u32;
+        metadata.mode() & mask
     }
     pub(crate) fn close(file: File) -> io::Result<()> {
         // Transfer sole ownership; retrying close could close an unrelated, reused descriptor.
@@ -300,11 +323,76 @@ mod native {
             Ok(())
         }
     }
+    pub(crate) struct Output<'a> {
+        _lock: std::io::StdoutLock<'static>,
+        flags: i32,
+        cancelled: &'a AtomicBool,
+    }
+    impl<'a> Output<'a> {
+        pub(crate) fn new(cancelled: &'a AtomicBool) -> std::io::Result<Self> {
+            let lock = std::io::stdout().lock();
+            let flags = unsafe { libc::fcntl(libc::STDOUT_FILENO, libc::F_GETFL) };
+            if flags < 0
+                || unsafe {
+                    libc::fcntl(libc::STDOUT_FILENO, libc::F_SETFL, flags | libc::O_NONBLOCK)
+                } < 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(Self {
+                _lock: lock,
+                flags,
+                cancelled,
+            })
+        }
+    }
+    impl std::io::Write for Output<'_> {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            loop {
+                if self.cancelled.load(Ordering::SeqCst) {
+                    return Err(std::io::Error::other("cancelled"));
+                }
+                let written =
+                    unsafe { libc::write(libc::STDOUT_FILENO, bytes.as_ptr().cast(), bytes.len()) };
+                if written >= 0 {
+                    return Ok(written as usize);
+                }
+                let error = std::io::Error::last_os_error();
+                match error.kind() {
+                    std::io::ErrorKind::Interrupted => continue,
+                    std::io::ErrorKind::WouldBlock => {
+                        let mut poll = libc::pollfd {
+                            fd: libc::STDOUT_FILENO,
+                            events: libc::POLLOUT,
+                            revents: 0,
+                        };
+                        if unsafe { libc::poll(&mut poll, 1, 50) } < 0
+                            && std::io::Error::last_os_error().kind()
+                                != std::io::ErrorKind::Interrupted
+                        {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                    }
+                    _ => return Err(error),
+                }
+            }
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl Drop for Output<'_> {
+        fn drop(&mut self) {
+            unsafe {
+                libc::fcntl(libc::STDOUT_FILENO, libc::F_SETFL, self.flags);
+            }
+        }
+    }
 }
 
 #[cfg(windows)]
 mod native {
-    use super::{File, Path, PathBuf, ProcessState};
+    use super::{File, Metadata, Path, PathBuf, ProcessState};
     use std::io::{self, Read, Write};
     use std::os::windows::{
         io::{AsRawHandle, FromRawHandle, OwnedHandle},
@@ -687,6 +775,28 @@ mod native {
         thread::park_timeout(timeout);
         Ok(())
     }
+    pub(super) fn path_bytes(path: &Path) -> Vec<u8> {
+        use std::os::windows::ffi::OsStrExt;
+        let mut bytes = Vec::new();
+        for character in char::decode_utf16(path.as_os_str().encode_wide()) {
+            match character {
+                Ok('\\') => bytes.push(b'/'),
+                Ok(character) => {
+                    bytes.extend_from_slice(character.encode_utf8(&mut [0; 4]).as_bytes())
+                }
+                // WTF-8 preserves unpaired UTF-16 surrogates without lossy replacement.
+                Err(error) => {
+                    let value = error.unpaired_surrogate();
+                    bytes.extend_from_slice(&[
+                        (0xe0 | value >> 12) as u8,
+                        (0x80 | (value >> 6) & 0x3f) as u8,
+                        (0x80 | value & 0x3f) as u8,
+                    ]);
+                }
+            }
+        }
+        bytes
+    }
     pub(crate) fn close(file: File) -> io::Result<()> {
         use std::os::windows::io::IntoRawHandle;
         if unsafe { CloseHandle(file.into_raw_handle()) } == 0 {
@@ -711,6 +821,11 @@ mod native {
             info.dwVolumeSerialNumber.into(),
             (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
         ))
+    }
+
+    pub(crate) fn file_kind(metadata: &Metadata) -> u32 {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes()
     }
 
     pub(super) fn register_cancellation(
@@ -739,6 +854,36 @@ mod native {
             Err(std::io::Error::last_os_error())
         } else {
             Ok(())
+        }
+    }
+    pub(crate) struct Output<'a> {
+        writer: Writer,
+        cancelled: &'a AtomicBool,
+    }
+    impl<'a> Output<'a> {
+        pub(crate) fn new(cancelled: &'a AtomicBool) -> std::io::Result<Self> {
+            Ok(Self {
+                writer: Writer::new(std::io::stdout())?,
+                cancelled,
+            })
+        }
+    }
+    impl std::io::Write for Output<'_> {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            loop {
+                if self.cancelled.load(Ordering::SeqCst) {
+                    return Err(std::io::Error::other("cancelled"));
+                }
+                match self.writer.write(bytes) {
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::park_timeout(std::time::Duration::from_millis(10))
+                    }
+                    result => return result,
+                }
+            }
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.writer.flush()
         }
     }
 }

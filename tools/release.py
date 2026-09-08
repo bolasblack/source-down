@@ -155,7 +155,7 @@ def release(binary, target, spec_plugin, include_source):
                       "--spec-plugin", spec_plugin, cwd=unpacked, env=environment(host)).decode().strip())
         command(sys.executable, ROOT / "tests/portability_test.py", "--binary", extracted_binary,
                 cwd=unpacked, env=environment(host))
-        print("native portability: PASS (paths, hard links, process scopes, close/write deadlines, interrupt)")
+        print("native portability: PASS (paths, hard links, process scopes, close/write deadlines, interrupt and blocked stdout)")
         if include_source:
             verify_source(source_archive, unpacked, source_name, extracted_binary)
     paths = [binary_archive] + ([source_archive] if include_source else [])

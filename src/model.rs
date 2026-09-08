@@ -194,6 +194,10 @@ impl SourceStore {
         self.files.keys().map(String::as_str)
     }
 
+    pub(crate) fn files(&self) -> impl Iterator<Item = &SourceFile> {
+        self.files.values().map(Arc::as_ref)
+    }
+
     pub fn contains(&self, path: &str) -> bool {
         self.files.contains_key(path)
     }
@@ -334,6 +338,12 @@ pub enum Dependency {
     File { path: String },
 }
 
+pub(crate) struct ResolvedDependency {
+    pub path: PathBuf,
+    pub links: Vec<(PathBuf, PathBuf)>,
+    pub missing: Option<std::io::ErrorKind>,
+}
+
 impl Dependency {
     pub fn path(&self) -> &str {
         match self {
@@ -343,6 +353,10 @@ impl Dependency {
 
     /// Resolve filesystem identity without reading content or requiring a missing tail to exist.
     pub fn resolve(&self, root: &Path) -> Result<PathBuf> {
+        self.resolve_with_links(root).map(|resolved| resolved.path)
+    }
+
+    pub(crate) fn resolve_with_links(&self, root: &Path) -> Result<ResolvedDependency> {
         let path = self.path();
         if !matches!(self, Self::Directory { path, .. } if path == ".") {
             validate_relative_path(path)?;
@@ -355,6 +369,8 @@ impl Dependency {
         let mut remaining = parts(Path::new(path));
         let mut current = root.to_owned();
         let mut links = 0;
+        let mut observed_links = vec![];
+        let mut missing = None;
         while let Some(part) = remaining.pop_front() {
             if part == "." {
                 continue;
@@ -380,6 +396,7 @@ impl Dependency {
                     }
                     let target = std::fs::read_link(&next)
                         .map_err(|e| Error::new(format!("dependency {path}: {e}")))?;
+                    observed_links.push((next.clone(), target.clone()));
                     let target = if target.is_absolute() {
                         current = root.to_owned();
                         target.strip_prefix(root).map_err(|_| {
@@ -392,14 +409,21 @@ impl Dependency {
                     target_parts.append(&mut remaining);
                     remaining = target_parts;
                 }
-                Ok(_) => current = next,
+                Ok(meta) => {
+                    // Preserve the blocking node when the host reports its child as missing.
+                    if !meta.is_dir() && !remaining.is_empty() {
+                        missing.get_or_insert(std::io::ErrorKind::NotADirectory);
+                    }
+                    current = next;
+                }
                 Err(error)
                     if matches!(
                         error.kind(),
                         std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
                     ) =>
                 {
-                    current = next
+                    missing.get_or_insert(error.kind());
+                    current = next;
                 }
                 Err(error) => {
                     return Err(Error::new(format!(
@@ -408,7 +432,11 @@ impl Dependency {
                 }
             }
         }
-        Ok(current)
+        Ok(ResolvedDependency {
+            path: current,
+            links: observed_links,
+            missing,
+        })
     }
 }
 

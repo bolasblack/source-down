@@ -7,7 +7,7 @@ use std::ops::Range;
 
 #[derive(Default)]
 pub(super) struct Include {
-    indexes: BTreeMap<String, crate::selection::Tree>,
+    indexes: BTreeMap<String, crate::selection::Material>,
 }
 
 // {% spec "blt-003" %}
@@ -47,28 +47,30 @@ impl ContentOperation for Include {
             let file = sources
                 .get(path)
                 .map_err(|error| Failure::new("source_error", error.to_string()))?;
-            let source_language = crate::lang::select(std::path::Path::new(&file.path));
-            let range = if let Some(lines) = lines {
-                line_range(&file.text, lines, &file.path)?
-            } else if let Some(id) = id {
+            let selection = if let Some(id) = id {
                 if !self.indexes.contains_key(&file.path) {
-                    let tree = if let Some(language) = &source_language {
-                        language
-                            .adapter
-                            .entities(&file)
-                            .map_err(|error| Failure::new("source_error", error.to_string()))?
-                    } else {
-                        crate::selection::markdown(&crate::markdown::sections(&file.text))
-                    };
-                    self.indexes.insert(file.path.clone(), tree);
+                    self.indexes.insert(
+                        file.path.clone(),
+                        crate::selection::Material::new(file.clone())?,
+                    );
                 }
                 self.indexes[&file.path].select(&id)?
             } else {
-                0..file.text.len()
+                crate::selection::Selected {
+                    file: &file,
+                    range: if let Some(lines) = lines {
+                        line_range(&file.text, lines, &file.path)?
+                    } else {
+                        0..file.text.len()
+                    },
+                    language: crate::lang::select(std::path::Path::new(&file.path))
+                        .map(|language| language.label),
+                }
             };
-            let payload = selected(&file, range.start, range.end)?;
-            let markdown = if let Some(language) = source_language {
-                let label = language.label;
+            let file = selection.file;
+            let range = selection.range;
+            let payload = selected(file, range.start, range.end)?;
+            let markdown = if let Some(label) = selection.language {
                 let fence = "`".repeat(longest_backticks(payload).saturating_add(1).max(3));
                 let newline = if payload.ends_with('\n') { "" } else { "\n" };
                 format!("{fence}{label}\n{payload}{newline}{fence}\n")

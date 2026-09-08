@@ -13,6 +13,7 @@
 | 内置指令与默认处理程序 | [内置插件](standard-directives.md) |
 | 整次运行的批次、指令结果、页面附录、报告与诊断 | [插件协议](plugins.md) |
 | 命令行、文件选择、项目配置、输出目录与发布 | [CLI 与配置](cli.md) |
+| 本地检索、快照身份、来源核对与按需读取 | [搜索与读取](search.md) |
 | 本仓库作为使用项目注册的 spec 指令与引用覆盖检查 | [项目指令](project-directives.md) |
 
 首次阅读顺序为 `model → rendering → directives → standard-directives → plugins → cli`。技术栈、源目录和测试工具属于[项目决策](../../.agents/INDEX-TAGS.md)，不改变本目录的符合性要求。
@@ -25,12 +26,13 @@
 
 ## 条款与格式身份
 
-产品条款使用 `SPEC-<领域>-<序号>`，领域为 `MOD`、`REN`、`DIR`、`BLT`、`ENT`、`PLG`、`CLI`；本仓库作为使用项目的指令契约使用 `PRJ`。每个领域从 `001` 连续分配新增编号，完整 ID 全目录唯一，重排与移动保留编号；文档引用写完整 ID，源码中的项目指令可用其拥有的短编号语法。条款标题前放同 ID 小写形式的显式 HTML 锚点。
+产品条款使用 `SPEC-<领域>-<序号>`，领域为 `MOD`、`REN`、`DIR`、`BLT`、`ENT`、`PLG`、`CLI`、`SRH`；本仓库作为使用项目的指令契约使用 `PRJ`。每个领域从 `001` 连续分配新增编号，完整 ID 全目录唯一，重排与移动保留编号；文档引用写完整 ID，源码中的项目指令可用其拥有的短编号语法。条款标题前放同 ID 小写形式的显式 HTML 锚点。
 
 | 公开格式 | 当前版本 | 唯一 owner |
 | --- | --- | --- |
 | 项目配置 | `config_version = 1` | [SPEC-CLI-003](cli.md#spec-cli-003) |
 | 插件请求与响应 | `protocol_version = 1` | [插件协议](plugins.md) |
+| 搜索快照与查询结果 | `format_version = 1` | [搜索与读取](search.md) |
 | Markdown 语法解释 | CommonMark 0.31.2 | [源码转换](rendering.md) |
 
 修改已公布的格式或合法输入集合时，检查版本兼容性并在 owning specification 定义结果。这里的版本代表本规范要求，不能据此声称已有发行物。

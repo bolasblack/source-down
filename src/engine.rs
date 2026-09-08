@@ -59,6 +59,10 @@ fn registry(config: &config::Config) -> Result<(Registry, Owners)> {
     Ok((registry, owners))
 }
 
+pub(crate) fn validate_config(config: &config::Config) -> Result<()> {
+    registry(config).map(|_| ())
+}
+
 /// Fixed configuration and plugin processes; input and output facts belong to each round.
 // {% spec "mod-004" %}
 // {% spec "plg-003" %}
@@ -72,7 +76,8 @@ pub struct Session {
     initialized: bool,
     ended: bool,
     next_batch: u64,
-    config_materials: BTreeSet<PathBuf>,
+    config_sources: SourceStore,
+    config_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +95,7 @@ struct RunData {
     sources: SourceStore,
     reports: Vec<(PathBuf, String)>,
     pages: Vec<(PathBuf, String)>,
+    index: Option<(PathBuf, String)>,
     outcome: RunOutcome,
 }
 
@@ -115,7 +121,6 @@ impl Session {
         }
         let mut sources = SourceStore::new(root.clone());
         let mut config = config::load(&mut sources, config_path)?;
-        let config_materials = sources.paths().map(|p| root.join(p)).collect();
         let output_root =
             publication::output_root(&root, output_dir.unwrap_or(Path::new(".source-down")))?;
         config::exclude_outputs(&mut config, &root, &output_root);
@@ -126,7 +131,8 @@ impl Session {
             output_root,
             registry,
             owners,
-            config_materials,
+            config_sources: sources,
+            config_path: config_path.unwrap_or(Path::new("source-down.toml")).into(),
             external: ExternalSession::new(cancelled),
             initialized: false,
             ended: false,
@@ -174,7 +180,8 @@ impl Session {
         let root = &self.root;
         let output_root = &self.output_root;
         let mut sources = SourceStore::new(root.clone());
-        let mut protected = self.config_materials.clone();
+        let mut protected: BTreeSet<_> =
+            self.config_sources.paths().map(|p| root.join(p)).collect();
         let files = config::select(&sources, &self.config, paths)?;
         let mut documents = vec![];
         let mut batches: BTreeMap<String, Vec<Request>> = BTreeMap::new();
@@ -219,6 +226,7 @@ impl Session {
         let mut check_failed = false;
         let mut diagnostics = Vec::new();
         let mut dependencies = BTreeMap::new();
+        let mut collection = crate::search::Collector::default();
         for (id, registration) in &mut self.registry {
             self.external.check()?;
             let batch = PluginBatch {
@@ -226,6 +234,7 @@ impl Session {
                 input_files: files.clone(),
                 requests: batches.remove(id).unwrap_or_default(),
             };
+            collection.requests(id, &batch.requests);
             let context = |error: Error| Error {
                 exit_code: error.exit_code,
                 message: format!(
@@ -271,6 +280,12 @@ impl Session {
                     .join(format!("{name}.md"));
                 let markdown =
                     render::report(id, &name, &fragment, &files, root, target.parent().unwrap())?;
+                collection.report(
+                    id,
+                    &name,
+                    &fragment,
+                    &path_text(target.strip_prefix(root).unwrap())?,
+                );
                 reports.push((target, markdown));
             }
             for (page, blocks) in output.append {
@@ -295,6 +310,13 @@ impl Session {
             let target = output_root
                 .join("pages")
                 .join(format!("{}.md", document.source.path));
+            collection.document(
+                document,
+                &path_text(target.strip_prefix(root).unwrap())?,
+                expansions
+                    .get(&document.source.path)
+                    .unwrap_or(&BTreeMap::new()),
+            )?;
             let mut markdown = render::render(
                 document,
                 expansions
@@ -305,10 +327,33 @@ impl Session {
             )?;
             if let Some(fragments) = appendices.get(&document.source.path) {
                 render::appendix(&mut markdown, fragments, root, target.parent().unwrap())?;
+                collection.appendices(
+                    &document.source.path,
+                    &path_text(target.strip_prefix(root).unwrap())?,
+                    fragments,
+                );
             }
             pages.push((target, markdown));
         }
         self.external.check()?;
+        let index = (!check_failed)
+            .then(|| {
+                collection.finish(crate::search::Round {
+                    input_files: files,
+                    report_owners: self.registry.keys().cloned().collect(),
+                    output: output_root,
+                    selections: paths,
+                    config: &self.config,
+                    config_path: &self.config_path,
+                    sources: &sources,
+                    config_sources: &self.config_sources,
+                    dependencies: &dependencies,
+                    check: &|| self.external.check(),
+                    pages: &pages,
+                    reports: &reports,
+                })
+            })
+            .transpose()?;
         let outcome = RunOutcome {
             batch_id,
             dependencies,
@@ -322,6 +367,7 @@ impl Session {
             sources,
             reports,
             pages,
+            index,
             outcome,
         })
     }
@@ -343,8 +389,11 @@ impl PreparedRun<'_> {
             &self.data.sources,
             &self.session.output_root,
             self.session.registry.keys().map(String::as_str),
-            &self.data.reports,
-            &self.data.pages,
+            publication::Outputs {
+                reports: &self.data.reports,
+                pages: &self.data.pages,
+                index: self.data.index.as_ref(),
+            },
             &self.data.protected,
             &|| self.session.external.check(),
         );

@@ -1,16 +1,95 @@
 #!/usr/bin/env python3
 """Run AGD-003 acceptance in a disposable copy, with the actual compiled CLI."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from urllib.parse import unquote
 from check_docs import outside_fences
+from handle_collisions import verify_collisions
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def verify_search(binary, root, output_name=".source-down"):
+    """Predeclared queries use the real CLI and continue into exact snapshot text."""
+    queries = json.loads((ROOT / "docs/engineering/search-queries.json").read_text())["queries"]
+    def call(*args):
+        run = subprocess.run([str(binary), *args, "--root", str(root), "--output-dir", output_name, "--json"], capture_output=True, timeout=10)
+        assert run.returncode == 0, run.stderr.decode(errors="replace")
+        return json.loads(run.stdout)
+    for query in queries:
+        found = call("search", query["query"], "--path", query["path"], "--limit", str(query["top_k"]))
+        assert found["freshness"] == "matched"
+        expected_function = None
+        if query["query"] == "code_span":
+            # User-approved source-based top-1 criterion; original declaration stays in search-queries.json.
+            # See docs/engineering/search-cli-verification.md for the candidate-set rationale.
+            assert query["path"] == "src/render.rs" and query["top_k"] == 1
+            assert found["returned"] == 1 and len(found["hits"]) == 1, found
+            hit = found["hits"][0]
+            original = (root / "src/render.rs").read_bytes()
+            # This known self-use fixture has an unindented function closing brace.
+            start = original.index(b"\npub fn code_span(") + 1
+            end = original.index(b"\n}", start) + 2
+            expected_function = original[start:end]
+            span = {"path": "src/render.rs", "start_byte": start, "end_byte": end,
+                    "start_line": 1 + original[:start].count(b"\n"), "end_line": 1 + original[:end - 1].count(b"\n")}
+            assert [source["span"] for source in hit["sources"]["items"]] == [span], hit
+            assert hit["sources"]["total"] == 1
+        else:
+            hits = [h for h in found["hits"] if h["kind"] == query["kind"] and any(o["input_path"] == query["expected_input"] for o in h["occurrences"]["items"])]
+            assert hits, (query, found)
+            hit = hits[0]
+        read = call("read", hit["handle"])
+        assert read["snapshot"] == found["snapshot"] and read["body"]["range"][0] == 0
+        assert hit["snippet"] in read["body"]["text"], query
+        if expected_function is not None:
+            assert expected_function in read["body"]["text"].encode(), "top-1 read must contain the complete exact code_span function"
+            assert [source["span"] for source in read["sources"]["items"]] == [span]
+        for source in read["sources"]["items"]:
+            span = source["span"]
+            assert (root / span["path"]).is_file() and source["current_link"] is not None
+        historical = call("read", hit["handle"], "--snapshot")
+        assert historical["freshness"] == "unchecked" and historical["body"] == read["body"]
+        assert all(source["current_link"] is None for source in historical["sources"]["items"])
+    print(f"search acceptance: PASS ({len(queries)} predeclared queries, exact reads and source links)")
+
+
+def verify_file_read(binary):
+    with tempfile.TemporaryDirectory(prefix="source-down-file-read-") as temporary:
+        root = Path(temporary)
+        selection = "class Cache:\r\n    # " + "甲乙😀a" * 8000 + "\r\n    def get(self):\r\n        return '終'"
+        text = "# preamble\r\n" + selection
+        (root / "cache.py").write_bytes(text.encode())
+        (root / "source-down.toml").write_text("broken configuration = [")
+        (root / ".source-down/search").mkdir(parents=True)
+        index = root / ".source-down/search/index.json"
+        index.write_text("broken index")
+        expected_hash = hashlib.sha256(text.encode()).hexdigest()
+        offset, chunks = 0, []
+        while True:
+            run = subprocess.run([str(binary), "read", "cache.py", "--id=Cache", "--root", str(root), "--offset", str(offset), "--json"], capture_output=True, timeout=10)
+            assert run.returncode == 0, run.stderr
+            result = json.loads(run.stdout)
+            assert set(result) == {"format_version", "mode", "id", "format", "language", "file_sha256", "source", "body"}
+            assert result["mode"] == "file" and result["file_sha256"] == expected_hash
+            assert result["source"]["start_byte"] == len("# preamble\r\n")
+            body = result["body"]
+            assert body["range"][0] == offset and len(body["text"]) <= 12000
+            chunks.append(body["text"])
+            if body["next_offset"] is None:
+                break
+            assert body["next_offset"] > offset
+            offset = body["next_offset"]
+        assert "".join(chunks).encode() == selection.encode()
+        assert index.read_text() == "broken index" and not (root / ".source-down/pages").exists()
+        print("file read acceptance: PASS (current raw entity, fixed-budget continuation, closed JSON, broken config/index independence)")
 
 
 def verify(binary, spec_plugin):
@@ -20,7 +99,7 @@ def verify(binary, spec_plugin):
             shutil.copytree(ROOT / name, root / name, ignore=shutil.ignore_patterns("__pycache__"))
         for name in ("Cargo.toml", "source-down.toml"):
             shutil.copy2(ROOT / name, root / name)
-        plugin_target = root / "target/release/examples/spec-plugin"
+        plugin_target = root / "target/release/examples" / spec_plugin.name
         plugin_target.parent.mkdir(parents=True)
         shutil.copy2(spec_plugin, plugin_target)
         output = root / ".source-down"
@@ -34,6 +113,8 @@ def verify(binary, spec_plugin):
             output = root / output_name
             old = snapshot("pages")
             old_reports = snapshot("reports")
+            index = output / "search/index.json"
+            old_index = index.read_bytes() if index.exists() else None
             result = subprocess.run(
                 [str(binary), "render", "src", "tools", "tests", "examples", "docs/guide", "--root", str(root), "--output-dir", output_name],
                 capture_output=True, timeout=30,
@@ -45,10 +126,12 @@ def verify(binary, spec_plugin):
             assert result.returncode == 1, (result.returncode, result.stderr)
             assert result.stderr, "failure needs a diagnostic"
             assert snapshot("pages") == old, "failure changed existing pages"
+            assert (index.read_bytes() if index.exists() else None) == old_index, "failure changed the old index"
             if reports_unchanged:
                 assert snapshot("reports") == old_reports, "execution failure changed reports"
 
         baseline = render()
+        verify_search(binary, root)
         assert baseline == render(), "identical inputs were not byte deterministic"
         content = b"\n".join(baseline.values())
         assert b"Build identity:" in content and b"src/model.rs" in content
@@ -115,6 +198,7 @@ def verify(binary, spec_plugin):
         assert ready == {"type": "ready", "protocol_version": 1}
         assert result["results"] == [{"id": "probe", "status": "ok", "content": [{"kind": "standard_call", "directive": "include", "arguments": {"positional": [definition_path], "named": {"lines": lines}}}]}]
         custom = render(output_name="reading/custom")
+        verify_search(binary, root, "reading/custom")
         guide_navigation(custom)
         assert render() == baseline
         source = root / "src/source.rs"
@@ -155,10 +239,11 @@ def verify(binary, spec_plugin):
             assert render() == baseline
         cargo = root / "Cargo.toml"
         manifest = cargo.read_text()
-        assert 'version = "0.1.0"' in manifest
-        cargo.write_text(manifest.replace('version = "0.1.0"', 'version = "0.1.1"', 1))
+        version = tomllib.loads(manifest)["package"]["version"]
+        changed_version = f"{int(version.split('.')[0]) + 1}.0.0"
+        cargo.write_text(manifest.replace(f'version = "{version}"', f'version = "{changed_version}"', 1))
         changed = render()
-        assert changed != baseline and b"0.1.1" in b"\n".join(changed.values())
+        assert changed != baseline and changed_version.encode() in b"\n".join(changed.values())
         cargo.write_text(manifest)
         (root / "src/lib.rs").write_bytes(original.replace(b"Build identity", b"Changed identity"))
         changed = render()
@@ -174,5 +259,7 @@ if __name__ == "__main__":
     parser.add_argument("--spec-plugin", type=Path)
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
-    spec_plugin = args.spec_plugin or binary.parent / "examples/spec-plugin"
+    spec_plugin = args.spec_plugin or binary.parent / "examples" / f"spec-plugin{binary.suffix}"
     verify(binary, spec_plugin.resolve(strict=True))
+    verify_file_read(binary)
+    verify_collisions(binary)

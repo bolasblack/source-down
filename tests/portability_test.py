@@ -157,6 +157,21 @@ class PortabilityTest(unittest.TestCase):
         self.assertEqual(index.read_bytes(), b"old index")
         self.stopped_descendant()
 
+    def test_interrupt_finishes_while_stdout_is_not_drained(self):
+        # SPEC-CLI-005: cancellation must finish before the consumer drains stdout.
+        # A full search response exceeds native pipe capacities without platform-specific resizing.
+        source = "\n".join(f"# needle {number} " + "甲乙😀" * 50 + "\n\n" + "甲乙😀" * 300 + "\n" for number in range(100))
+        (self.root / "large.md").write_bytes(source.encode())
+        rendered = self.spawn("render", "large.md")
+        _, err = rendered.communicate(timeout=15)
+        self.assertEqual(rendered.returncode, 0, err)
+        process = self.spawn("search", "needle", "--limit=100", "--snapshot", "--json")
+        time.sleep(1)
+        self.assertIsNone(process.poll(), "the large response must still be blocked on stdout")
+        self.interrupt(process)
+        self.assertEqual(process.wait(timeout=10), 130)
+        process.communicate(timeout=10)
+
     def test_publication_rejects_a_hard_link_to_source(self):
         # SPEC-CLI-007: native file identity must protect aliases of original material.
         (self.root / "source-down.toml").write_text("config_version = 1\n")

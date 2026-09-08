@@ -14,15 +14,25 @@ pub(crate) fn check_cancelled(cancelled: &AtomicBool) -> Result<()> {
 }
 
 // {% spec "cli-004" %}
+pub(crate) struct Outputs<'a> {
+    pub reports: &'a [(PathBuf, String)],
+    pub pages: &'a [(PathBuf, String)],
+    pub index: Option<&'a (PathBuf, String)>,
+}
+
 pub(crate) fn publish<'a>(
     sources: &SourceStore,
     output_root: &Path,
     report_owners: impl Iterator<Item = &'a str>,
-    reports: &[(PathBuf, String)],
-    pages: &[(PathBuf, String)],
+    outputs: Outputs<'_>,
     protected: &BTreeSet<PathBuf>,
     check: &impl Fn() -> Result<()>,
 ) -> Result<()> {
+    let Outputs {
+        reports,
+        pages,
+        index,
+    } = outputs;
     check()?;
     let root = &sources.root;
     let report_targets: BTreeSet<_> = reports.iter().map(|(path, _)| path.clone()).collect();
@@ -33,6 +43,7 @@ pub(crate) fn publish<'a>(
     let targets: BTreeSet<_> = reports
         .iter()
         .chain(pages)
+        .chain(index)
         .map(|(path, _)| path.as_path())
         .collect();
     for target in &targets {
@@ -89,6 +100,7 @@ pub(crate) fn publish<'a>(
     for target in reports
         .iter()
         .chain(pages)
+        .chain(index)
         .map(|(path, _)| path)
         .chain(&stale)
     {
@@ -96,7 +108,7 @@ pub(crate) fn publish<'a>(
         check_target(target)?;
     }
     let mut prepared = Vec::new();
-    for (target, markdown) in reports.iter().chain(pages) {
+    for (target, markdown) in reports.iter().chain(pages).chain(index) {
         check()?;
         std::fs::create_dir_all(target.parent().unwrap())
             .map_err(|e| Error::new(format!("output directory: {e}")))?;
@@ -128,10 +140,15 @@ pub(crate) fn publish<'a>(
         };
         let relative = path_text(target.strip_prefix(root).unwrap())?;
         if let Err(error) = operation() {
+            let index_state = if index.is_some_and(|(path, _)| path == target) {
+                "; pages published; index not updated"
+            } else {
+                ""
+            };
             return Err(Error {
                 exit_code: error.exit_code,
                 message: format!(
-                    "publication stopped at {relative}: {error}; completed: {}",
+                    "publication stopped at {relative}: {error}{index_state}; completed: {}",
                     if completed.is_empty() {
                         "none".into()
                     } else {

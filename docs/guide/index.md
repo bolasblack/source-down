@@ -7,6 +7,7 @@
 1. [从源码中取得说明](reading-source.md.md#reading-source)
 2. [在讲解中展开材料](expanding-directives.md.md#expanding-directives)
 3. [组成可追溯的页面](building-pages.md.md#building-pages)
+4. [搜索与继续阅读](searching.md.md#searching)
 
 本目录是 Source Down 的创作输入。以上链接面向生成后的阅读页面；完整文件名后追加 `.md`，
 所以原始 Markdown 浏览器中不一定能打开它们。先运行 `mise run review`，再从输出目录的

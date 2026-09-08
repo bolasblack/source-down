@@ -1,0 +1,33 @@
+{
+  "baseline_commit": "bc8b0f9059128a16e83e5757e454b3ad48723a4f",
+  "recorded_before_index_implementation": true,
+  "self_use": {
+    "input_files": 69,
+    "input_bytes": 513253,
+    "markdown_bytes": 10781,
+    "m1_render_seconds": 0.14077234314754605,
+    "generated_bytes": 745228
+  },
+  "enlarged_fixture": {
+    "files": 100,
+    "paragraphs_per_file": 100,
+    "paragraph": "# Retry policy\n\n重试等待时间 RetryPolicy retries snake_case.\n\n",
+    "repeated_includes": 500,
+    "authored_bytes": 680000
+  },
+  "budgets": {
+    "self_use": {
+      "build_seconds": 15,
+      "query_seconds": 3,
+      "read_seconds": 3,
+      "peak_rss_kib": 262144
+    },
+    "enlarged_fixture": {
+      "build_seconds": 30,
+      "query_seconds": 5,
+      "read_seconds": 5,
+      "peak_rss_kib": 524288
+    }
+  },
+  "budgets_scope": "release build, cold process and repeated invocation, current-fact checks included; measure stages independently"
+}

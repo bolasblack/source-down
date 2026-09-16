@@ -10,6 +10,14 @@ import unittest
 from .result import now
 from .process import execute
 from .filesystem import read_bytes
+from types import MappingProxyType
+from .artifacts import ArtifactAssertions, OutputSnapshot, UNSET, utf8
+from .source_down import RunAssertions, SourceDown
+from .reading_assertions import ReadingAssertions
+from .read_assertions import ReadAssertions
+from .index_assertions import IndexAssertions
+from .watch import WatchAssertions
+from .native_fixtures import NativeAssertions
 
 
 def identity(path):
@@ -68,6 +76,90 @@ class Project:
     def __init__(self, context, root):
         self.context, self.root = context, Path(root)
 
+    @property
+    def sourceDown(self):
+        return SourceDown(self)
+
+    def captureOutput(self, *, outputDir=UNSET):
+        return OutputSnapshot.capture(self, outputDir)
+
+    def writeFiles(self, files):
+        for name, value in files.items():
+            self.writeBytes(name, utf8(value))
+
+    def writeBytes(self, name, value):
+        self.write_bytes(name, value)
+
+    def writeInPlace(self, path, content):
+        (self.root / path).write_bytes(utf8(content))
+
+    def atomicReplace(self, path, content, *, temporaryPath):
+        target, temporary = self.root / path, self.root / temporaryPath
+        if target.parent.resolve() / target.name == temporary.parent.resolve() / temporary.name:
+            raise ValueError("temporary path must differ from the target")
+        created = False
+        try:
+            with temporary.open("xb") as output:
+                created = True
+                output.write(utf8(content))
+            os.replace(temporary, target)
+        except BaseException:
+            if created:
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass  # Preserve the write, close or replace failure.
+            raise
+
+    def readBytes(self, name):
+        return self.read_bytes(name)
+
+    def prependBytes(self, name, prefix):
+        self.writeBytes(name, prefix + self.readBytes(name))
+
+    def replaceBytes(self, name, old, new, count=-1):
+        self.writeBytes(name, self.readBytes(name).replace(old, new, count))
+
+    def replaceInFiles(self, paths, *, replacements):
+        for path in paths:
+            for old, new in replacements:
+                self.replaceBytes(path, old, new)
+
+    def replaceFile(self, path, *, fromPath):
+        os.replace(self.root / fromPath, self.root / path)
+
+    def symlink(self, path, *, target, directory=False):
+        os.symlink(target, self.root / path, target_is_directory=directory)
+
+    def removeFile(self, path):
+        (self.root / path).unlink()
+
+    def makeDirectory(self, path):
+        (self.root / path).mkdir()
+
+    def removeDirectory(self, path):
+        (self.root / path).rmdir()
+
+    def hardlink(self, path, *, target):
+        os.link(self.root / target, self.root / path)
+
+    def replaceSymlink(self, path, *, target, temporaryPath):
+        self.symlink(temporaryPath, target=target)
+        self.replaceFile(path, fromPath=temporaryPath)
+
+    def writePreservingTimes(self, path, content):
+        before = (self.root / path).stat()
+        self.writeBytes(path, utf8(content))
+        os.utime(self.root / path, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+    @contextmanager
+    def editing(self, *paths):
+        original = {path: self.readBytes(path) for path in paths}
+        try:
+            yield MappingProxyType(original)
+        finally:
+            self.writeFiles(original)
+
     def write_bytes(self, name, value):
         path = self.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,11 +181,30 @@ class Project:
                 for path in sorted(base.rglob("*")) if path.is_file()}
 
 
-class E2ECase(unittest.TestCase):
+class E2ECase(RunAssertions, ArtifactAssertions, ReadingAssertions, ReadAssertions, IndexAssertions, WatchAssertions, NativeAssertions, unittest.TestCase):
     context = None
 
     def fixture(self, name):
         return (self.context.run / "tests-e2e/fixtures" / name).read_bytes()
+
+    def declaredSearchQueries(self):
+        import json
+        return json.loads((self.context.run / "docs/engineering/search-queries.json").read_bytes())["queries"]
+
+    def buildMutant(self, *, forceShortHandle="00000000000"):
+        from .mutation import Mutant, build_mutant
+        if forceShortHandle != "00000000000":
+            raise ValueError("the controlled mutation supports only the zero short handle")
+        owner = self.context.repository / "src/search/handles.rs"
+        original = owner.read_bytes()
+        needle = b"base62(xxh64(&input, 0))"
+        self.assertEqual(original.count(needle), 1, "controlled replacement owner changed")
+        binary = build_mutant(self.context, "src/search/handles.rs", original, needle,
+                              b"base62({ let _ = xxh64(&input, 0); 0 })")
+        return Mutant(binary, owner, original, self.context.mutations[-1].copy())
+
+    def assertProductionSourceUnchanged(self, mutant):
+        self.assertEqual(mutant.owner.read_bytes(), mutant.original, "production source changed")
 
     @contextmanager
     def project(self, files=None, *, parent=None):
@@ -102,18 +213,3 @@ class E2ECase(unittest.TestCase):
             for name, value in (files or {}).items():
                 project.write_bytes(name, value.encode("utf-8") if isinstance(value, str) else value)
             yield project
-
-    def verify(self, *, files, command, expect_exit_code=0, expect_stdout=b"",
-               expect_file_contains_in_order=None):
-        with self.project(files) as project:
-            result = project.run(command)
-            self.assertEqual(result.returncode, expect_exit_code, result.stderr)
-            self.assertEqual(result.stdout, expect_stdout)
-            for name, pieces in (expect_file_contains_in_order or {}).items():
-                actual = project.read_bytes(name)
-                offset = 0
-                for piece in pieces:
-                    piece = piece.encode("utf-8") if isinstance(piece, str) else piece
-                    found = actual.find(piece, offset)
-                    self.assertGreaterEqual(found, 0, f"{name}: missing ordered bytes {piece!r}\n{actual!r}")
-                    offset = found + len(piece)

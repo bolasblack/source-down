@@ -11,7 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class E2EToolsTest(unittest.TestCase):
+class E2EToolsFixture(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="source-down-e2e-runner-")
         self.addCleanup(temporary.cleanup)
@@ -48,6 +48,8 @@ class E2EToolsTest(unittest.TestCase):
         self.assertEqual(len(paths), 1, paths)
         return json.loads(paths[0].read_bytes()), paths[0].parent
 
+
+class E2EToolsTest(E2EToolsFixture):
     def test_listing_discovers_the_saved_cases_without_executing_them(self):
         self.case("render/test_listed.py", '''import unittest
 class Listed(unittest.TestCase):
@@ -159,8 +161,10 @@ class Unavailable(unittest.TestCase):
 class ActualCommand(E2ECase):
     specs = ("SPEC-CLI-001",)
     def test_scenario(self):
-        self.verify(files={"main.rs": "fn main() {}\\n"}, command=["render", "main.rs"],
-                    expect_file_contains_in_order={".source-down/pages/main.rs.md": [b"fn main() {}\\n"]})
+        with self.project({"main.rs": "fn main() {}\\n"}) as project:
+            reading = project.sourceDown.render(inputs=["main.rs"])
+            self.assertRenderResult(reading, exitCode=0, stdout=b"")
+            self.assertPageContent(reading, "pages/main.rs.md", containsInOrder=[b"fn main() {}\\n"])
 ''')
         target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")) / "debug"
         extension = ".exe" if os.name == "nt" else ""
@@ -193,10 +197,11 @@ class Reading(E2ECase):
     specs = ("SPEC-BLT-003",)
     def test_scenario(self):
         """The same fixture is executed and rendered"""
-        self.verify(files={"main.rs": '// {% include "material.md" %}\\nfn main() {}\\n',
-                           "material.md": self.fixture("shared.md")},
-                    command=["render", "main.rs"],
-                    expect_file_contains_in_order={".source-down/pages/main.rs.md": [self.fixture("shared.md")]})
+        with self.project({"main.rs": '// {% include "material.md" %}\\nfn main() {}\\n',
+                           "material.md": self.fixture("shared.md")}) as project:
+            reading = project.sourceDown.render(inputs=["main.rs"])
+            self.assertRenderResult(reading, exitCode=0, stdout=b"")
+            self.assertPageContent(reading, "pages/main.rs.md", containsInOrder=[self.fixture("shared.md")])
 ''')
         result = self.run_acceptance("--review")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -226,15 +231,16 @@ from support import E2ECase
 class Mutation(E2ECase):
     specs = ("SPEC-CLI-004",)
     def test_scenario(self):
-        self.verify(files={"main.rs": "fn main() {}\\n"}, command=["render", "main.rs"],
-                    expect_exit_code=0,
-                    expect_file_contains_in_order={".source-down/pages/main.rs.md": [self.fixture("expected.md")]})
+        with self.project({"main.rs": "fn main() {}\\n"}) as project:
+            reading = project.sourceDown.render(inputs=["main.rs"])
+            self.assertRenderResult(reading, exitCode=0, stdout=b"")
+            self.assertPageContent(reading, "pages/main.rs.md", containsInOrder=[self.fixture("expected.md")])
 '''
         runs = []
         for variant in ("baseline", "fixture", "exit", "restored"):
             with self.subTest(variant=variant):
                 fixture.write_bytes(b"WRONG EXPECTED CONTENT\n" if variant == "fixture" else original)
-                self.case("render/test_mutation.py", source.replace("expect_exit_code=0", "expect_exit_code=1") if variant == "exit" else source)
+                self.case("render/test_mutation.py", source.replace("exitCode=0", "exitCode=1") if variant == "exit" else source)
                 result = self.run_acceptance("--review")
                 expected = "failed" if variant in ("fixture", "exit") else "passed"
                 self.assertEqual(result.returncode, 1 if expected == "failed" else 0, result.stderr)

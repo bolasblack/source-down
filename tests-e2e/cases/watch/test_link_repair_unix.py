@@ -1,7 +1,9 @@
 # 普通恢复域保存链接文本变化，不把链接目标全文当成未知材料扫描。
+# 链接先后指向以下真实失败和健康插件。
+# {% include "tests-e2e/fixtures/watch/execution_start_failure.py" %}
+# {% include "tests-e2e/fixtures/watch/execution_start_healthy.py" %}
 import time
 from support import E2ECase
-from .test_execution_repair import START, HEALTHY
 
 
 class LinkRepair(E2ECase):
@@ -12,25 +14,25 @@ class LinkRepair(E2ECase):
         """未声明的脚本链接在首次崩溃后重定向，一次链接替换即可恢复页面和搜索"""
         with self.project({
             "docs/index.md": "Linked repair proof\n",
-            "broken.py": START + "raise SystemExit(9)\n",
-            "fixed.py": START + HEALTHY,
+            "broken.py": self.fixture("watch/execution_start_failure.py"),
+            "fixed.py": self.fixture("watch/execution_start_healthy.py"),
+            "e2e_wire.py": self.fixture("plugin_wire.py"),
             "source-down.toml": 'config_version=1\n[plugins.check]\ncommand=["python","entry"]\n',
         }) as project:
-            entry = project.root / "entry"
-            entry.symlink_to("broken.py")
-            with self.context.running([self.context.binary, "watch", "docs", "--root", project.root], cwd=project.root) as process:
-                process.wait_for(lambda: b"execution failure; watching" in process.stderr)
-                self.assertEqual(project.read_bytes(".source-down/starts"), b"start\n")
+            project.symlink("entry", target="broken.py")
+            with project.sourceDown.watch(inputs=["docs"]) as watch:
+                watch.waitForDiagnostics(contains=["execution failure; watching"])
+                self.assertFileContent(project, ".source-down/starts", b"start\n")
+
                 replacement = project.root / ".source-down/new-entry"
                 replacement.symlink_to("fixed.py")
-                replacement.replace(entry)
-                process.wait_for(lambda: (project.root / ".source-down/search/index.json").is_file())
-                found = project.run(["search", "Linked repair", "--json"])
-                self.assertEqual(found.returncode, 0, found.stderr)
-                self.assertIn(b"Linked repair proof", found.stdout)
-                self.assertEqual(project.read_bytes(".source-down/starts"), b"start\nstart\n")
+                replacement.replace(project.root / "entry")
+                watch.waitForOutputState(filesPresent=[".source-down/search/index.json"])
+                found = project.sourceDown.searchSuccessfully("Linked repair")
+                self.assertIn(b"Linked repair proof", found.raw.stdout)
+                self.assertFileContent(project, ".source-down/starts", b"start\nstart\n")
                 time.sleep(1.1)  # Reading the link target cannot manufacture another attempt.
-                self.assertEqual(project.read_bytes(".source-down/starts"), b"start\nstart\n")
-                self.assertNotIn(b"switching to poll", process.stderr)
-                process.interrupt()
-                self.assertEqual(process.wait().returncode, 130)
+                self.assertFileContent(project, ".source-down/starts", b"start\nstart\n")
+                self.assertNotIn(b"switching to poll", watch.stderr)
+                watch.interrupt()
+                self.assertRunResult(watch.wait(), exitCode=130)

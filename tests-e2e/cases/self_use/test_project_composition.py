@@ -4,19 +4,23 @@ from support.project import SelfUseCase
 
 
 class ProjectComposition(SelfUseCase):
-    specs = ("SPEC-PLG-007", "SPEC-REN-011")
+    specs = ('SPEC-PLG-007', 'SPEC-REN-011')
 
     def test_scenario(self):
         """真实 Python 插件的内容按节点顺序组合"""
-        with self.self_use() as project:
-            result = project.run(["render", "src", "tools", "tests", "tests-e2e", "examples", "docs/guide"])
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout, b"")
-            page = project.read_bytes(".source-down/pages/docs/guide/expanding-directives.md.md")
-            heading = b"## API ` SourceSpan `"
-            declaration = b"pub struct SourceSpan"
-            tail = b"The source above keeps its original bytes and location."
-            for piece in (heading, declaration, tail, b'`{% include "src/model.rs" %}`'):
-                self.assertIn(piece, page)
-            self.assertLess(page.index(heading), page.index(declaration))
-            self.assertLess(page.index(declaration), page.index(tail))
+        with self.selfUseProject() as project:
+            reading = project.sourceDown.render(
+                inputs=["src", "tools", "tests", "tests-e2e", "examples", "docs/guide"],
+            )
+
+            self.assertRenderResult(reading, exitCode=0, stdout=b"")
+            self.assertPageContent(
+                reading,
+                "pages/docs/guide/expanding-directives.md.md",
+                contains=[b'`{% include "src/model.rs" %}`'],
+                firstOccurrencesInOrder=[
+                    b"## API ` SourceSpan `",
+                    b"pub struct SourceSpan",
+                    b"The source above keeps its original bytes and location.",
+                ],
+            )

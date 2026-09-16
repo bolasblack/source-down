@@ -12,23 +12,17 @@ class SixLanguages(SelfUseCase):
             ("examples/javascript.js", "//", ""), ("examples/typescript.ts", "//", ""),
             ("examples/reader.go", "//", ""), ("examples/reader.py", "#", ""),
         )
-        with self.self_use() as project:
-            with self.context.running([self.context.binary, "watch", "src", "tools", "tests", "tests-e2e", "examples", "docs/guide",
-                                       "--root", project.root], cwd=project.root) as process:
-                process.wait_for(lambda: b"pages; watching" in process.stderr, timeout=30)
+        with self.selfUseProject() as project:
+            with project.sourceDown.watch(inputs=["src", "tools", "tests", "tests-e2e", "examples", "docs/guide"]) as watch:
+                watch.waitForDiagnostics(contains=["pages; watching"], timeout=30)
                 for number, (path, opening, closing) in enumerate(changes):
                     with self.subTest(source=path):
                         marker = f"LanguageWatchProof{number}"
-                        project.write_text(path, project.read_bytes(path).decode() + f"\n{opening} {marker}{closing}\n")
-                        page = project.root / f".source-down/pages/{path}.md"
-                        process.wait_for(lambda: marker.encode() in project.read_bytes(page), timeout=30)
-                        found = process.wait_for(lambda: self.find_fresh(project, marker), timeout=30)
-                        self.assertIn(marker.encode(), found.stdout)
-                self.assertIn(b"backend native", process.stderr)
-                self.assertNotIn(b"switching to poll", process.stderr)
-                process.interrupt()
-                self.assertEqual(process.wait().returncode, 130)
-
-    def find_fresh(self, project, marker):
-        found = project.run(["search", marker, "--json"])
-        return found if found.returncode == 0 and marker.encode() in found.stdout else None
+                        project.writeInPlace(path, project.readBytes(path).decode() + f"\n{opening} {marker}{closing}\n")
+                        watch.waitForOutputState(contains={f".source-down/pages/{path}.md": marker}, timeout=30)
+                        found = watch.waitForSuccessfulSearch(marker, contains=marker, timeout=30)
+                        self.assertIn(marker.encode(), found.raw.stdout)
+                self.assertWatchDiagnostics(watch, contains=["backend native"])
+                self.assertNotIn(b"switching to poll", watch.stderr)
+                watch.interrupt()
+                self.assertRunResult(watch.wait(), exitCode=130)

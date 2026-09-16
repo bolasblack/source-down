@@ -1,18 +1,7 @@
-# 持续生成立即完成首轮，不把 stdin EOF 当作停止请求；用户中断后回收真实插件。
+# 持续生成立即完成首轮，不把 stdin EOF 当作停止请求；用户中断退出后输出保持。
+# 空健康观察插件记录首轮批次；阅读页展示运行的同一文件。
+# {% include "tests-e2e/fixtures/watch/observer.py" %}
 from support import E2ECase
-
-
-PLUGIN = '''import json, os, sys
-from pathlib import Path
-json.loads(sys.stdin.readline())
-Path('plugin.pid').write_text(str(os.getpid()))
-print(json.dumps({'type':'ready','protocol_version':1}), flush=True)
-for line in sys.stdin:
-    batch = json.loads(line)
-    print(json.dumps({'type':'result','batch_id':batch['batch_id'],'results':[],
-        'append':[],'reports':{},'diagnostics':[],'dependencies':[]}), flush=True)
-Path('plugin.closed').write_text('stdin closed')
-'''
 
 
 class FirstRound(E2ECase):
@@ -24,20 +13,20 @@ class FirstRound(E2ECase):
             "docs/start.md": '[next]({% link "docs/end.md" %}#author)\n',
             "docs/end.md": 'End\n',
             "settings.toml": 'config_version=1\n[plugins.observe]\ncommand=["python","plugin.py"]\n',
-            "plugin.py": PLUGIN,
+            "plugin.py": self.fixture("watch/observer.py"),
+            "e2e_wire.py": self.fixture("plugin_wire.py"),
         }) as project:
-            command = [self.context.binary, "watch", "docs", "--root", project.root,
-                       "--config", "settings.toml", "--output-dir", "reading/nested"]
-            with self.context.running(command, cwd=project.root) as process:
-                process.wait_for(lambda: (project.root / "reading/nested/search/index.json").is_file())
-                self.assertIn(b"[next](end.md.md#author)", project.read_bytes("reading/nested/pages/docs/start.md.md"))
-                self.assertIn(b"End\n", project.read_bytes("reading/nested/pages/docs/end.md.md"))
-                process.wait_for(lambda: b"watching" in process.stderr)
-                self.assertEqual(process.stdout, b"")
-                self.assertIn(b"watch round 1", process.stderr)
+            with project.sourceDown.watch(
+                inputs=["docs"], config="settings.toml", outputDir="reading/nested",
+            ) as watch:
+                watch.waitForOutputState(filesPresent=["reading/nested/search/index.json"])
+                self.assertIn(b"[next](end.md.md#author)", project.readBytes("reading/nested/pages/docs/start.md.md"))
+                self.assertIn(b"End\n", project.readBytes("reading/nested/pages/docs/end.md.md"))
+                watch.waitForDiagnostics(contains=["watching"])
+                self.assertEqual(watch.stdout, b"")
+                self.assertWatchDiagnostics(watch, contains=["watch round 1"])
                 saved = project.snapshot("reading/nested")
-                process.interrupt()
-                result = process.wait()
-                self.assertEqual(result.returncode, 130, result.stderr)
-                self.assertEqual(result.stdout, b"")
+                watch.interrupt()
+                result = watch.wait()
+                self.assertRunResult(result, exitCode=130, stdout=b"")
                 self.assertEqual(project.snapshot("reading/nested"), saved)

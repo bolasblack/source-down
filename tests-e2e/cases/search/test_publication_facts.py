@@ -1,10 +1,13 @@
-import json
-from support.case import E2ECase
+# A plugin observes seven directory facts, including the reader's own output.
+# Each complete report set determines whether a file blocks its child path.
+# {% include "tests-e2e/fixtures/search/directory_facts.py" %}
+# {% include "tests-e2e/fixtures/plugin_wire.py" %}
+# {% include "tests-e2e/cases/search/fixtures.py" %}
+from support import E2ECase
+from support.protocol import writeReportReply
+from .fixtures import directoryFactsPluginFiles
 
 
-# A plugin can observe directories that contain the reader's own output.
-# Its snapshot describes the completed publication, including paths whose parent
-# becomes a file, and the later removal of an old report.
 class PublicationFacts(E2ECase):
     specs = ("SPEC-SRH-002", "SPEC-SRH-003", "SPEC-CLI-004")
 
@@ -12,62 +15,42 @@ class PublicationFacts(E2ECase):
         """Search remains fresh after creating outputs and pruning an old report."""
         with self.project({
             "input.md": "needle\n",
-            "report-enabled": "yes\n",
-            "source-down.toml": (
-                "config_version=1\n[plugins.project]\n"
-                "command=['python','plugin.py']\n"
-            ),
-            "plugin.py": '''import json, sys
-from pathlib import Path
-json.loads(sys.stdin.readline())
-print(json.dumps({'type':'ready','protocol_version':1}), flush=True)
-for line in sys.stdin:
-    batch = json.loads(line)
-    reports = {'summary':{'markdown':'needle report','sources':[]}} if Path('report-enabled').exists() else {}
-    print(json.dumps({'type':'result','batch_id':batch['batch_id'],
-        'results':[], 'append':[], 'reports':reports, 'diagnostics':[],
-        'dependencies':[
-            {'kind':'directory','path':'.','recursive':True},
-            {'kind':'directory','path':'review','recursive':False},
-            {'kind':'directory','path':'review/search/index.json','recursive':True},
-            {'kind':'directory','path':'review/search/index.json/child','recursive':False},
-            {'kind':'directory','path':'review/reports/project/summary.md','recursive':False},
-            {'kind':'directory','path':'review/reports/project/summary.md/child','recursive':True},
-            {'kind':'directory','path':'missing/child','recursive':False}]}), flush=True)
-''',
+            **directoryFactsPluginFiles(self, dependencies=[
+                {"kind": "directory", "path": ".", "recursive": True},
+                {"kind": "directory", "path": "review", "recursive": False},
+                {"kind": "directory", "path": "review/search/index.json", "recursive": True},
+                {"kind": "directory", "path": "review/search/index.json/child", "recursive": False},
+                {"kind": "directory", "path": "review/reports/project/summary.md", "recursive": False},
+                {"kind": "directory", "path": "review/reports/project/summary.md/child", "recursive": True},
+                {"kind": "directory", "path": "missing/child", "recursive": False},
+            ]),
         }) as project:
-            generated = project.run(["render", "input.md", "--output-dir", "review"])
-            self.assertEqual(generated.returncode, 0, generated.stderr)
-            self.assertEqual(generated.stdout, b"")
-            index = json.loads(project.read_bytes("review/search/index.json"))
-            facts = {fact["dependency"]["path"]: fact["state"]
-                     for fact in index["manifest"]["dependencies"]["project"]}
-            for path in ("review/search/index.json/child", "review/reports/project/summary.md/child"):
-                self.assertEqual(facts[path], {"kind": "missing", "reason": "NotADirectory"})
-            self.assertEqual(facts["missing/child"], {"kind": "missing", "reason": "NotFound"})
-            before = project.snapshot("review")
-            found = project.run(["search", "needle", "--output-dir", "review", "--json"])
-            self.assertEqual(found.returncode, 0, found.stderr)
-            self.assertEqual(json.loads(found.stdout)["total_matches"], 2)
-            self.assertEqual(project.snapshot("review"), before)
+            writeReportReply(project, reports={
+                "summary": {"markdown": "needle report", "sources": []},
+            }, diagnostics=[])
+            published = project.sourceDown.renderSuccessfully(inputs=["input.md"], outputDir="review")
+            self.assertIndexDirectoryFacts(published, owner="project", includes={
+                "review/search/index.json/child": {"kind": "missing", "reason": "NotADirectory"},
+                "review/reports/project/summary.md/child": {"kind": "missing", "reason": "NotADirectory"},
+                "missing/child": {"kind": "missing", "reason": "NotFound"},
+            })
+            beforeSearch = project.captureOutput(outputDir="review")
+            found = project.sourceDown.search("needle", outputDir="review")
+            self.assertSearchResult(found, exitCode=0, totalMatches=2)
+            self.assertOutputUnchanged(project, since=beforeSearch)
 
-            # The next complete report set omits summary. Removing it changes a
-            # blocked child path into an ordinary missing path in the new index.
-            (project.root / "report-enabled").unlink()
-            generated = project.run(["render", "input.md", "--output-dir", "review"])
-            self.assertEqual(generated.returncode, 0, generated.stderr)
-            self.assertFalse((project.root / "review/reports/project/summary.md").exists())
-            index = json.loads(project.read_bytes("review/search/index.json"))
-            facts = {fact["dependency"]["path"]: fact["state"]
-                     for fact in index["manifest"]["dependencies"]["project"]}
-            self.assertEqual(facts["review/reports/project/summary.md/child"],
-                             {"kind": "missing", "reason": "NotFound"})
-            found = project.run(["search", "needle", "--output-dir", "review", "--json"])
-            self.assertEqual(found.returncode, 0, found.stderr)
-            self.assertEqual(json.loads(found.stdout)["total_matches"], 1)
+            # An empty complete report set withdraws summary and unblocks its child.
+            writeReportReply(project, reports={}, diagnostics=[])
+            withdrawn = project.sourceDown.render(inputs=["input.md"], outputDir="review")
+            self.assertRunResult(withdrawn, exitCode=0)
+            self.assertPathAbsent(project, "review/reports/project/summary.md")
+            self.assertIndexDirectoryFacts(withdrawn, owner="project", includes={
+                "review/reports/project/summary.md/child": {"kind": "missing", "reason": "NotFound"},
+            })
+            found = project.sourceDown.search("needle", outputDir="review")
+            self.assertSearchResult(found, exitCode=0, totalMatches=1)
 
-            # Unrelated directory members still participate in freshness.
-            project.write_text("review/search/untracked.txt", "new member\n")
-            found = project.run(["search", "needle", "--output-dir", "review", "--json"])
-            self.assertEqual(found.returncode, 1, found.stderr)
-            self.assertIn(b"stale search index", found.stderr)
+            # Unrelated members still participate in directory freshness.
+            project.writeInPlace("review/search/untracked.txt", "new member\n")
+            stale = project.sourceDown.search("needle", outputDir="review")
+            self.assertRunResult(stale, exitCode=1, stderrContains=["stale search index"])

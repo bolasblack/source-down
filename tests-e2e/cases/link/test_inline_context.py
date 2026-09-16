@@ -1,6 +1,7 @@
-# 内联能力适用于通用正文位置，代码与转义示例仍由原上下文保护。
-import json
+# 同一篇正文包含四种有效内联位置和四种保持字面的示例。
+# {% include "tests-e2e/fixtures/link/inline_context.py" %}
 from support import E2ECase
+from fixtures.link.inline_context import SOURCE
 
 
 class InlineContext(E2ECase):
@@ -9,42 +10,20 @@ class InlineContext(E2ECase):
     def test_scenario(self):
         """标题、紧凑列表和引用内联展开，字面代码与转义保持"""
         with self.project({
-            'docs/index.md': '''# [{% include "label.txt" %}]({% link "docs/details.md" %})
-
-- [item]({% link "docs/details.md" %}#manual)
-
-> [quote]({% link "docs/details.md" %})
-
-URL: {% link "docs/details.md" %}
-
-`[literal]({% unknown %})`
-
-\\{% unknown %}
-
-```text
-{% unknown %}
-```
-
-<div>
-{% unknown %}
-</div>
-''',
-            'docs/details.md': '',
-            'label.txt': 'Title',
+            "docs/index.md": SOURCE,
+            "docs/details.md": "",
+            "label.txt": "Title",
         }) as project:
-            result = project.run(['render', 'docs'])
-            self.assertEqual(result.returncode, 0, result.stderr)
-            page = project.read_bytes('.source-down/pages/docs/index.md.md')
-            for rendered in (b'# [Title](details.md.md)', b'- [item](details.md.md#manual)',
-                             b'> [quote](details.md.md)', b'URL: details.md.md'):
-                self.assertIn(rendered, page)
-            self.assertIn(b'`[literal]({% unknown %})`', page)
-            self.assertIn(b'\\{% unknown %}', page)
-            self.assertIn(b'```text\n{% unknown %}\n```', page)
-            self.assertIn(b'<div>\n{% unknown %}\n</div>', page)
-            self.assertEqual(page.count(b'**Call site**'), 5)
-            snapshot = json.loads(project.read_bytes('.source-down/search/index.json'))
-            calls = [at for record in snapshot['records'] if record['kind'] == 'expansion'
-                     for at in record['occurrences'] if at['input_path'] == 'docs/index.md']
-            self.assertEqual(len(calls), 5)
-            self.assertTrue(any(r['body'] == '[item](details.md.md#manual)' for r in snapshot['records']))
+            reading = project.sourceDown.render(inputs=["docs"])
+            self.assertRunResult(reading, exitCode=0)
+
+            self.assertPageContent(reading, "pages/docs/index.md.md", contains=[
+                "# [Title](details.md.md)", "- [item](details.md.md#manual)",
+                "> [quote](details.md.md)", "URL: details.md.md",
+            ])
+            self.assertPageContent(reading, "pages/docs/index.md.md", contains=[
+                "`[literal]({% unknown %})`", "\\{% unknown %}",
+                "```text\n{% unknown %}\n```", "<div>\n{% unknown %}\n</div>",
+            ], counts={"**Call site**": 5})
+            self.assertExpansionOccurrences(reading, inputPath="docs/index.md", count=5)
+            self.assertIndexContainsText(reading, text="[item](details.md.md#manual)")

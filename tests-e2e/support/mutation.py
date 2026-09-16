@@ -1,11 +1,57 @@
 """Build a requested replacement in a private source and target directory."""
 import hashlib
+from dataclasses import dataclass
+from copy import deepcopy
 import os
 from pathlib import Path
 import shutil
 import tempfile
+import re
 from build import environment, host_target
 from .case import identity
+from .artifacts import UNSET
+
+
+@dataclass(frozen=True)
+class RecordCollision:
+    handle: str
+    recordIds: object = UNSET
+
+
+@dataclass(frozen=True)
+class ScopeCollision:
+    handle: str
+    recordId: object = UNSET
+
+
+@dataclass(frozen=True)
+class Mutant:
+    binary: Path
+    owner: Path
+    original: bytes
+    _evidence: dict
+
+    @property
+    def evidence(self):
+        return deepcopy(self._evidence)
+
+
+def assertCollision(case, stderr, expected, context):
+    if not isinstance(expected, (RecordCollision, ScopeCollision)):
+        raise TypeError("error expects RecordCollision or ScopeCollision")
+    match = re.search(rb"handle collision " + re.escape(expected.handle.encode("ascii")) +
+                      rb": ([a-f0-9]{64}) and ([a-f0-9]{64}|scope)(?![a-zA-Z0-9])", stderr)
+    case.assertIsNotNone(match, context)
+    first, second = (part.decode("ascii") for part in match.groups())
+    case.assertNotEqual(first, second, context)
+    if isinstance(expected, RecordCollision):
+        case.assertNotEqual(second, "scope", context)
+        if expected.recordIds is not UNSET:
+            case.assertEqual((first, second), tuple(expected.recordIds), context)
+    else:
+        case.assertEqual(second, "scope", context)
+        if expected.recordId is not UNSET:
+            case.assertEqual(first, expected.recordId, context)
 
 
 def build_mutant(context, owner, original, needle, replacement):

@@ -11,29 +11,31 @@ class QueryLinks(E2ECase):
         with self.project({"outside.md": "Outside root\n"}) as outside, self.project({
             "docs/a.md": "First linked source\n", "docs/b.md": "Second linked source\n",
         }) as project:
-            entry = project.root / "entry.md"
-            entry.symlink_to("docs/a.md")
-            with self.context.running([self.context.binary, "watch", "entry.md", "--root", project.root], cwd=project.root) as process:
-                index = project.root / ".source-down/search/index.json"
-                process.wait_for(index.is_file)
-                first = project.root / ".source-down/pages/docs/a.md.md"
-                second = project.root / ".source-down/pages/docs/b.md.md"
+            project.symlink("entry.md", target="docs/a.md")
+            with project.sourceDown.watch(inputs=["entry.md"]) as watch:
+                watch.waitForOutputState(filesPresent=[".source-down/search/index.json"])
                 replacement = project.root / ".source-down/replacement"
                 replacement.symlink_to("docs/b.md")
-                replacement.replace(entry)
-                process.wait_for(lambda: second.is_file() and not first.exists())
-                process.wait_for(lambda: b"Second linked source" in project.run(["search", "Second", "--json"]).stdout)
-                old_index = project.read_bytes(index)
+                replacement.replace(project.root / "entry.md")
+                watch.waitForOutputState(
+                    filesPresent=[".source-down/pages/docs/b.md.md"],
+                    absent=[".source-down/pages/docs/a.md.md"],
+                )
+                watch.waitForSearchOutput("Second", contains="Second linked source")
+                oldIndex = project.readBytes(".source-down/search/index.json")
+
                 replacement.symlink_to(outside.root / "outside.md")
-                replacement.replace(entry)
-                process.wait_for(lambda: b"failure; watching" in process.stderr)
-                self.assertEqual(project.read_bytes(index), old_index)
+                replacement.replace(project.root / "entry.md")
+                watch.waitForDiagnostics(contains=["failure; watching"])
+                self.assertFileContent(project, ".source-down/search/index.json", oldIndex)
+
                 replacement.symlink_to("docs/b.md")
-                replacement.replace(entry)
-                project.write_text("docs/b.md", "Restored linked proof\n")
-                process.wait_for(lambda: b"Restored linked proof" in project.read_bytes(second))
-                found = project.run(["search", "Restored linked", "--json"])
-                self.assertEqual(found.returncode, 0, found.stderr)
-                self.assertNotIn(b"switching to poll", process.stderr)
-                process.interrupt()
-                self.assertEqual(process.wait().returncode, 130)
+                replacement.replace(project.root / "entry.md")
+                project.writeInPlace("docs/b.md", "Restored linked proof\n")
+                watch.waitForOutputState(contains={
+                    ".source-down/pages/docs/b.md.md": "Restored linked proof",
+                })
+                project.sourceDown.searchSuccessfully("Restored linked")
+                self.assertNotIn(b"switching to poll", watch.stderr)
+                watch.interrupt()
+                self.assertRunResult(watch.wait(), exitCode=130)

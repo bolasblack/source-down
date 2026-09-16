@@ -1,9 +1,6 @@
 # 两条记录短句柄碰撞属于明确错误，必须在发布前以及快照加载时拒绝。
 # 此场景先使用传入的原始程序建立基线，再使用临时副本构建的受控变异程序。
-import json
-import re
 from support import E2ECase
-from support.mutation import build_mutant
 
 
 class HandleCollision(E2ECase):
@@ -11,40 +8,41 @@ class HandleCollision(E2ECase):
 
     def test_scenario(self):
         """两条记录碰撞时拒绝生成和读取，完整保留旧产物"""
-        owner = self.context.repository / "src/search/handles.rs"
-        original = owner.read_bytes()
-        needle = b"base62(xxh64(&input, 0))"
-        self.assertEqual(original.count(needle), 1, "controlled replacement owner changed")
-        mutant = build_mutant(self.context, "src/search/handles.rs", original, needle,
-                              b"base62({ let _ = xxh64(&input, 0); 0 })")
-        names = [f"{i}.md" for i in range(2)]
-        with self.project({name: f"needle original {name}\n" for name in names}) as project:
-            normal = project.run(["render", *names])
-            self.assertEqual(normal.returncode, 0, normal.stderr)
-            self.assertEqual(normal.stdout, b"")
-            saved = project.snapshot()
-            index = json.loads(saved["search/index.json"])
-            self.assertEqual(len(index["records"]), 2)
-            found = project.run(["search", "needle", "--json"])
-            self.assertEqual(found.returncode, 0, found.stderr)
-            handle = json.loads(found.stdout)["hits"][0]["handle"]
-            for name in names:
-                project.write_text(name, f"needle changed candidate {name}\n")
+        mutant = self.buildMutant(forceShortHandle="00000000000")
 
-            # 同一变异程序分别触发准备索引、搜索加载、句柄读取加载三个真实入口。
-            for command in (["render", *names], ["search", "needle", "--snapshot", "--json"],
-                            ["read", handle, "--snapshot", "--json"]):
-                with self.subTest(command=command):
-                    rejected = project.run(command, binary=mutant)
-                    self.assertEqual(rejected.returncode, 1)
-                    self.assertEqual(rejected.stdout, b"")
-                    match = re.search(rb"handle collision 00000000000: ([a-f0-9]{64}) and ([a-f0-9]{64}|scope)", rejected.stderr)
-                    self.assertIsNotNone(match, rejected.stderr)
-                    first, second = (value.decode("ascii") for value in match.groups())
-                    self.assertNotEqual(first, second)
-                    self.assertEqual(second == "scope", False)
-                    if command[0] != "render":
-                        self.assertEqual(first, index["records"][0]["id"])
-                        self.assertEqual(second, index["records"][1]["id"])
-                    self.assertEqual(project.snapshot(), saved, "collision changed output or left temporary files")
-        self.assertEqual(owner.read_bytes(), original, "production source changed")
+        with self.project({
+            "0.md": "needle original 0.md\n",
+            "1.md": "needle original 1.md\n",
+        }) as project:
+            oldPublication = project.sourceDown.renderSuccessfully(
+                inputs=["0.md", "1.md"], indexRecords=2,
+            )
+            handle = project.sourceDown.searchSuccessfully("needle").hits[0].handle
+
+            project.writeInPlace("0.md", "needle changed candidate 0.md\n")
+            project.writeInPlace("1.md", "needle changed candidate 1.md\n")
+            oldRecordIds = oldPublication.index.recordIds
+            colliding = project.sourceDown.withBinary(mutant.binary)
+
+            # 新候选无法发布，已有产物完整保留。
+            with self.subTest(operation="render changed inputs"):
+                rejected = colliding.render(inputs=["0.md", "1.md"])
+
+                self.assertRecordCollision(rejected, handle="00000000000")
+                self.assertOutputUnchanged(project, since=oldPublication)
+
+            # 旧快照中的两条记录发生碰撞，搜索必须拒绝。
+            with self.subTest(operation="search saved snapshot"):
+                rejected = colliding.search("needle", snapshot=True)
+
+                self.assertRecordCollision(rejected, handle="00000000000", recordIds=oldRecordIds)
+                self.assertOutputUnchanged(project, since=oldPublication)
+
+            # 使用正常程序返回的句柄，也无法绕过旧快照的碰撞检查。
+            with self.subTest(operation="read saved snapshot"):
+                rejected = colliding.read(handle, snapshot=True)
+
+                self.assertRecordCollision(rejected, handle="00000000000", recordIds=oldRecordIds)
+                self.assertOutputUnchanged(project, since=oldPublication)
+
+        self.assertProductionSourceUnchanged(mutant)

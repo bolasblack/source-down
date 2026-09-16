@@ -23,8 +23,20 @@ One `cases/<workflow>/test_*.py` file describes one user scenario. Use ordinary
 `unittest` assertions, a one-line test docstring for its title, complete owning clause
 IDs in `specs`, and standalone comments for prose. Keep inputs, actions, exact expected
 bytes/JSON and preservation assertions visible in the case. `E2ECase.project()` creates
-an isolated mutable project; `project.run()` uses the supplied actual CLI and returns
-raw byte streams. `subTest` records matrix outcomes. Explicit `platforms` metadata
+an isolated mutable project. `project.sourceDown.render/search/read/readEntity`
+execute the supplied CLI and save observations; domain assertions check only
+declared expectations. `renderSuccessfully` guarantees exit 0 and empty stdout;
+`searchSuccessfully` guarantees exit 0. `withBinary` selects a program for a separate
+entry without changing the original. `readEntityToEnd`, `assertCompleteUtf8Read`
+and `assertReadFromFile` express complete reading and file provenance separately.
+Index assertions accept `rendered.index` as well as render/output observations or
+captured index bytes. Search assertions accept the raw `project.run()` result;
+simple read metadata/text/alias assertions accept one saved response. Complete
+reading assertions require the `ReadResult` with its actual traversal facts.
+Use `fields` for selected top-level metadata/manifest keys and `includesFiles`
+for required render artifacts; complete ordered lists still use `equals`.
+`project.run()` remains available for explicit command
+matrices and returns raw byte streams. `subTest` records matrix outcomes. Explicit `platforms` metadata
 retains inapplicable cases with a reason; ordinary skip/expected failure cannot pass
 full acceptance.
 
@@ -36,8 +48,24 @@ same path in the case's explanation. Root review excludes fixtures as inputs; an
 explicit include can still show a textual fixture. Do not put spec-plugin directives
 in these comments: the isolated reading root uses only builtin include.
 
-Support supplies temporary files, process scopes, result events, reading projection
-and narrow project/mutant preparation. It does not own product assertions. The two
-collision cases show exact replacement provenance, original versus mutant commands,
-failure identities and unchanged output. Native parser, Session, syscall and process
-tests remain in Rust and continue to run in the full suite.
+For runtime saves, `writeInPlace(path, content)` keeps the target file object;
+`atomicReplace(path, content, temporaryPath=...)` creates the named temporary
+file exclusively and replaces the target after closing it. Both require existing
+parent directories. Keep `writeFiles` for preparation that creates parents and
+`replaceFile` for a replacement prepared earlier in the scenario.
+
+Watch waits return saved observations: output `files` contains only the bytes
+actually read by the successful attempt, logs contain the matched interval and
+its end checkpoint, and events contain counted bytes and their count. Obtain a
+watch-owned `checkpoint()` before editing and pass it as `since`; it marks a log
+position without attributing events to the edit. Presence-only waits do not read
+bodies, and multi-file observations do not promise one atomic publication.
+
+Support supplies project preparation, named operations, immutable observations and
+domain verification. Cases declare inputs, operations, concrete expectations and
+preservation scopes. The dedicated guide case lists its URLs and source relationships
+directly; refresh cases include a shared expectation file. Keep the two locations
+in agreement when those expectations change. `editing` restores inputs; a subsequent
+explicit render proves recovery. The collision cases declare the zero-handle
+mutation, full record identities and unchanged output. Native parser, Session,
+syscall and process tests remain in Rust and continue to run in the full suite.

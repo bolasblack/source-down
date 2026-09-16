@@ -1,7 +1,8 @@
 # 目录依赖的成员事实包含发布创建的父目录，watch 只排除自己的生成操作。
+# 三条目录声明和事件记录来自阅读页展示的同一真实插件。
+# {% include "tests-e2e/fixtures/watch/output_projection.py" %}
 import time
 from support import E2ECase
-from .test_content import PLUGIN
 
 
 class OutputProjection(E2ECase):
@@ -9,33 +10,32 @@ class OutputProjection(E2ECase):
 
     def test_scenario(self):
         """root 与输出祖先依赖不因发布循环，手改输出只使搜索过期，其他成员仍触发生成"""
-        plugin = PLUGIN.replace("'dependencies':[]", """'dependencies':[
-            {'kind':'directory','path':'.','recursive':True},
-            {'kind':'directory','path':'review','recursive':False},
-            {'kind':'directory','path':'review/nested','recursive':True}]""")
-        # A regular member's permissions are not part of a directory declaration.
-        plugin = plugin.replace("    print(json.dumps(", "    log.chmod(0o600)\n    print(json.dumps(")
         with self.project({
             "docs/index.md": "Needle projection\n",
             "source-down.toml": 'config_version=1\n[plugins.observe]\ncommand=["python","plugin.py"]\n',
-            "plugin.py": plugin,
+            "plugin.py": self.fixture("watch/output_projection.py"),
+            "e2e_wire.py": self.fixture("plugin_wire.py"),
         }) as project:
-            with self.context.running([self.context.binary, "watch", "docs", "--root", project.root,
-                                       "--output-dir", "review/nested"], cwd=project.root) as process:
-                process.wait_for(lambda: b"published 1 pages" in process.stderr)
-                events = project.read_bytes(".source-down/observer.events")
-                found = project.run(["search", "Needle", "--output-dir", "review/nested", "--json"])
-                self.assertEqual(found.returncode, 0, found.stderr)
-                page = project.root / "review/nested/pages/docs/index.md.md"
-                page.write_bytes(b"manually edited output\n")
+            with project.sourceDown.watch(inputs=["docs"], outputDir="review/nested") as watch:
+                watch.waitForPublishedPages(1)
+                events = project.readBytes(".source-down/observer.events")
+                project.sourceDown.searchSuccessfully("Needle", outputDir="review/nested")
+                project.writeInPlace("review/nested/pages/docs/index.md.md", "manually edited output\n")
                 time.sleep(1.2)  # Two complete idle intervals must not send another batch.
-                self.assertEqual(project.read_bytes(".source-down/observer.events"), events)
-                self.assertEqual(project.read_bytes(page), b"manually edited output\n")
-                stale = project.run(["search", "Needle", "--output-dir", "review/nested", "--json"])
-                self.assertEqual(stale.returncode, 1, stale.stderr)
-                self.assertIn(b"stale search index", stale.stderr)
-                project.write_text("review/authored.txt", "A real new directory member\n")
-                process.wait_for(lambda: b"Needle projection" in project.read_bytes(page))
-                process.wait_for(lambda: project.read_bytes(".source-down/observer.events").count(b"initialize\n") > events.count(b"initialize\n"))
-                process.interrupt()
-                self.assertEqual(process.wait().returncode, 130)
+                self.assertFileContent(project, ".source-down/observer.events", events)
+                self.assertFileContent(project, "review/nested/pages/docs/index.md.md", b"manually edited output\n")
+                stale = project.sourceDown.search("Needle", outputDir="review/nested")
+                self.assertRunResult(stale, exitCode=1)
+                self.assertIn(b"stale search index", stale.raw.stderr)
+
+                project.writeInPlace("review/authored.txt", "A real new directory member\n")
+                watch.waitForOutputState(contains={
+                    "review/nested/pages/docs/index.md.md": "Needle projection",
+                })
+                watch.waitForEventCount(
+                    ".source-down/observer.events",
+                    "initialize\n",
+                    greaterThan=events.count(b"initialize\n"),
+                )
+                watch.interrupt()
+                self.assertRunResult(watch.wait(), exitCode=130)

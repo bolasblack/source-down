@@ -8,21 +8,23 @@ class PublicationRepair(E2ECase):
     def test_scenario(self):
         """发布目标被目录占用时保留旧产物，修复该生成树内路径后自动发布并更新搜索"""
         with self.project({"docs/keep.md": "Keep reading\n"}) as project:
-            with self.context.running([self.context.binary, "watch", "docs", "--root", project.root], cwd=project.root) as process:
-                index = project.root / ".source-down/search/index.json"
-                page = project.root / ".source-down/pages/docs/keep.md.md"
-                process.wait_for(lambda: b"watch round 1: published" in process.stderr)
-                old_index, old_page = project.read_bytes(index), project.read_bytes(page)
+            with project.sourceDown.watch(inputs=["docs"]) as watch:
+                watch.waitForDiagnostics(contains=["watch round 1: published"])
+                oldIndex = project.readBytes(".source-down/search/index.json")
+                oldPage = project.readBytes(".source-down/pages/docs/keep.md.md")
                 blocked = project.root / ".source-down/pages/docs/added.md.md"
                 blocked.mkdir()
-                project.write_text("docs/added.md", "The repaired publication\n")
-                process.wait_for(lambda: b"publication failure; watching" in process.stderr)
-                self.assertEqual(project.read_bytes(index), old_index)
-                self.assertEqual(project.read_bytes(page), old_page)
+                project.writeInPlace("docs/added.md", "The repaired publication\n")
+                watch.waitForDiagnostics(contains=["publication failure; watching"])
+                self.assertFileContent(project, ".source-down/search/index.json", oldIndex)
+                self.assertFileContent(project, ".source-down/pages/docs/keep.md.md", oldPage)
+
                 blocked.rmdir()
-                process.wait_for(lambda: blocked.is_file() and project.read_bytes(index) != old_index)
-                result = project.run(["search", "repaired", "--json"])
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn(b"The repaired publication", result.stdout)
-                process.interrupt()
-                self.assertEqual(process.wait().returncode, 130)
+                watch.waitForOutputState(
+                    filesPresent=[".source-down/pages/docs/added.md.md"],
+                    changed={".source-down/search/index.json": oldIndex},
+                )
+                found = project.sourceDown.searchSuccessfully("repaired")
+                self.assertIn(b"The repaired publication", found.raw.stdout)
+                watch.interrupt()
+                self.assertRunResult(watch.wait(), exitCode=130)

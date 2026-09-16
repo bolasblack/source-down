@@ -1,5 +1,4 @@
 # 显式轮询是公开选择；它仍比较正文而非 mtime / 大小。
-import os
 from support import E2ECase
 
 
@@ -9,20 +8,20 @@ class PollWatch(E2ECase):
     def test_scenario(self):
         """--poll 从启动声明轮询，同大小同 mtime 改写仍更新页面与搜索"""
         with self.project({"docs/index.md": "Before poll\n"}) as project:
-            with self.context.running([self.context.binary, "watch", "docs", "--poll", "--root", project.root], cwd=project.root) as process:
-                process.wait_for(lambda: b"pages; watching" in process.stderr)
-                self.assertIn(b"watch: backend poll", process.stderr)
-                self.assertNotIn(b"watch: backend native", process.stderr)
+            with project.sourceDown.watch(inputs=["docs"], poll=True) as watch:
+                watch.waitForDiagnostics(contains=["pages; watching"])
+                self.assertWatchDiagnostics(watch, contains=["watch: backend poll"])
+                self.assertNotIn(b"watch: backend native", watch.stderr)
                 source = project.root / "docs/index.md"
                 before = source.stat()
-                project.write_text("docs/index.md", "After! poll\n")
-                os.utime(source, ns=(before.st_atime_ns, before.st_mtime_ns))
+                project.writePreservingTimes("docs/index.md", "After! poll\n")
                 self.assertEqual(source.stat().st_size, before.st_size)
                 self.assertEqual(source.stat().st_mtime_ns, before.st_mtime_ns)
-                page = project.root / ".source-down/pages/docs/index.md.md"
-                process.wait_for(lambda: b"After! poll" in project.read_bytes(page))
-                found = project.run(["search", "After", "--json"])
-                self.assertEqual(found.returncode, 0, found.stderr)
-                self.assertIn(b"After! poll", found.stdout)
-                process.interrupt()
-                self.assertEqual(process.wait().returncode, 130)
+                watch.waitForOutputState(contains={
+                    ".source-down/pages/docs/index.md.md": "After! poll",
+                })
+                found = project.sourceDown.search("After")
+                self.assertRunResult(found, exitCode=0)
+                self.assertIn(b"After! poll", found.raw.stdout)
+                watch.interrupt()
+                self.assertRunResult(watch.wait(), exitCode=130)

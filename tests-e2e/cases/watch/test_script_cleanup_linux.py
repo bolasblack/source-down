@@ -1,8 +1,9 @@
 # 同一个真实进程清理握手覆盖普通未知脚本与排除目录内的显式程序。
-import os
-import sys
+# 两种脚本都从固定失败程序切换为固定健康程序，清理窗口使用真实 C shim。
+# {% include "tests-e2e/fixtures/watch/execution_start_failure.py" %}
+# {% include "tests-e2e/fixtures/watch/execution_start_healthy.py" %}
+# {% include "tests-e2e/fixtures/watch/cleanup.c" %}
 from support import E2ECase
-from .test_execution_repair import START, HEALTHY
 
 
 class ScriptCleanup(E2ECase):
@@ -13,33 +14,30 @@ class ScriptCleanup(E2ECase):
         """清理暂停时修复普通未知脚本或 target 内显式程序，释放后无需再次编辑即可恢复"""
         for script, command in (("plugin.py", '["python","plugin.py"]'),
                                 ("target/plugin.py", '["target/plugin.py"]')):
+            wire = "e2e_wire.py" if script == "plugin.py" else "target/e2e_wire.py"
             with self.subTest(script=script), self.project({
                 "docs/index.md": "Cleanup script proof\n",
-                script: "#!/usr/bin/env python\n" + START + "raise SystemExit(9)\n",
-                "target/shim.c": self.fixture("watch/cleanup.c"),
+                script: b"#!/usr/bin/env python\n" + self.fixture("watch/execution_start_failure.py"),
+                wire: self.fixture("plugin_wire.py"),
                 "source-down.toml": f'config_version=1\n[plugins.check]\ncommand={command}\n',
             }) as project:
                 (project.root / script).chmod(0o755)
-                library = project.root / "target/cleanup.so"
-                compiled = self.context.command([sys.executable, self.context.repository / "tools/build.py", "--",
-                    self.context.repository / "tools/cc", "-shared", "-fPIC", project.root / "target/shim.c",
-                    "-o", library, "-ldl"], cwd=project.root, timeout=60)
-                self.assertEqual(compiled.returncode, 0, compiled.stderr)
-                environment = dict(os.environ, LD_PRELOAD=str(library), SD_WATCH_CLEANUP_ROOT=str(project.root))
-                with self.context.running([self.context.binary, "watch", "docs", "--root", project.root],
-                                          cwd=project.root, env=environment) as process:
-                    release = project.root / ".source-down/cleanup.release"
-                    try:
-                        process.wait_for(lambda: (project.root / ".source-down/cleanup.ready").is_file())
-                        project.write_text(script, "#!/usr/bin/env python\n" + START + HEALTHY)
-                        release.write_text("continue")
-                        process.wait_for(lambda: (project.root / ".source-down/search/index.json").is_file())
-                        found = project.run(["search", "Cleanup script", "--json"])
-                        self.assertEqual(found.returncode, 0, found.stderr)
-                        self.assertIn(b"Cleanup script proof", found.stdout)
-                        self.assertNotIn(b"switching to poll", process.stderr)
-                        process.interrupt()
-                        self.assertEqual(process.wait().returncode, 130)
-                    finally:
-                        release.parent.mkdir(exist_ok=True)
-                        release.write_text("cleanup must not remain blocked")
+                with self.cleanupWindow(
+                    project, source="target/shim.c", library="target/cleanup.so",
+                ) as fault:
+                    with project.sourceDown.watch(inputs=["docs"], env=fault.environment) as watch:
+                        try:
+                            fault.waitUntilPaused(watch)
+                            project.writeInPlace(
+                                script,
+                                b"#!/usr/bin/env python\n" + self.fixture("watch/execution_start_healthy.py"),
+                            )
+                            fault.release()
+                            watch.waitForOutputState(filesPresent=[".source-down/search/index.json"])
+                            found = project.sourceDown.searchSuccessfully("Cleanup script")
+                            self.assertIn(b"Cleanup script proof", found.raw.stdout)
+                            self.assertNotIn(b"switching to poll", watch.stderr)
+                            watch.interrupt()
+                            self.assertRunResult(watch.wait(), exitCode=130)
+                        finally:
+                            fault.release()

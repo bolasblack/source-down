@@ -1,12 +1,28 @@
 """Prepare a mutable copy of this project; case files own its acceptance rules."""
 from contextlib import contextmanager
 import shutil
-from .case import E2ECase
+import tomllib
+from .case import E2ECase, Project
+from .protocol import SpecPlugin
+
+
+class SelfUseProject(Project):
+    @property
+    def specPlugin(self):
+        return SpecPlugin(self)
+
+    def bumpPackageMajorVersion(self):
+        original = self.readBytes("Cargo.toml")
+        version = tomllib.loads(original.decode("utf-8"))["package"]["version"]
+        changed = f"{int(version.split('.')[0]) + 1}.0.0".encode("utf-8")
+        self.writeBytes("Cargo.toml", original.replace(b'version = "' + version.encode("utf-8") + b'"',
+                                                       b'version = "' + changed + b'"', 1))
+        return changed
 
 
 class SelfUseCase(E2ECase):
     @contextmanager
-    def self_use(self):
+    def selfUseProject(self):
         with self.project() as project:
             for name in ("src", "docs/specs", "docs/guide", "tools", "tests", "examples"):
                 shutil.copytree(self.context.repository / name, project.root / name,
@@ -22,8 +38,4 @@ class SelfUseCase(E2ECase):
             plugin = project.root / "target/release/examples" / self.context.spec_plugin.name
             plugin.parent.mkdir(parents=True)
             shutil.copy2(self.context.spec_plugin, plugin)
-            yield project
-
-
-def markdown_snapshot(project, output=".source-down"):
-    return {name: data for name, data in project.snapshot(output).items() if name.endswith(".md")}
+            yield SelfUseProject(self.context, project.root)

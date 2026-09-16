@@ -1,7 +1,8 @@
 # 普通文件的名字不决定目录排除，重复未知提示必须按真实事实去重。
+# 修复后运行阅读页展示的固定健康程序；故障程序因 marker 参数不同而留在正文。
+# {% include "tests-e2e/fixtures/watch/execution_start_healthy.py" %}
 import time
 from support import E2ECase
-from .test_execution_repair import START, HEALTHY
 
 
 class UnknownRepairs(E2ECase):
@@ -14,23 +15,33 @@ class UnknownRepairs(E2ECase):
                 self.exercise_marker(marker, text, attempts)
 
     def exercise_marker(self, marker, text, attempts):
+        failure = (
+            "from pathlib import Path\n"
+            "Path('.source-down').mkdir(exist_ok=True)\n"
+            "with Path('.source-down/starts').open('a', newline='') as log: log.write('start\\n')\n"
+            f"Path({marker!r}).write_bytes({text.encode()!r})\n"
+            "raise SystemExit(9)\n"
+        )
         with self.project({
             "docs/index.md": "Marker recovery proof\n",
-            "plugin.py": START + f"Path({marker!r}).write_bytes({text.encode()!r})\nraise SystemExit(9)\n",
+            "plugin.py": failure,
+            "e2e_wire.py": self.fixture("plugin_wire.py"),
             "source-down.toml": 'config_version=1\n[plugins.check]\ncommand=["python","plugin.py"]\n',
         }) as project:
-            with self.context.running([self.context.binary, "watch", "docs", "--root", project.root], cwd=project.root) as process:
-                starts = project.root / ".source-down/starts"
-                process.wait_for(lambda: starts.is_file() and starts.read_bytes().count(b"start\n") >= attempts)
-                process.wait_for(lambda: b"execution failure; watching" in process.stderr)
+            with project.sourceDown.watch(inputs=["docs"]) as watch:
+                watch.waitForEventCount(
+                    ".source-down/starts", "start\n", greaterThan=attempts - 1,
+                    filesPresent=[".source-down/starts"],
+                )
+                watch.waitForDiagnostics(contains=["execution failure; watching"])
                 time.sleep(1.2)  # Identical writes must remain quiet for several old polling periods.
-                self.assertEqual(starts.read_bytes(), b"start\n" * attempts)
-                self.assertIn(b"backend native", process.stderr)
-                self.assertNotIn(b"switching to poll", process.stderr)
-                project.write_text("plugin.py", START + HEALTHY)
-                process.wait_for(lambda: (project.root / ".source-down/search/index.json").is_file())
-                result = project.run(["search", "Marker recovery", "--json"])
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn(b"Marker recovery proof", result.stdout)
-                process.interrupt()
-                self.assertEqual(process.wait().returncode, 130)
+                self.assertFileContent(project, ".source-down/starts", b"start\n" * attempts)
+                self.assertWatchDiagnostics(watch, contains=["backend native"])
+                self.assertNotIn(b"switching to poll", watch.stderr)
+
+                project.writeInPlace("plugin.py", self.fixture("watch/execution_start_healthy.py"))
+                watch.waitForOutputState(filesPresent=[".source-down/search/index.json"])
+                found = project.sourceDown.searchSuccessfully("Marker recovery")
+                self.assertIn(b"Marker recovery proof", found.raw.stdout)
+                watch.interrupt()
+                self.assertRunResult(watch.wait(), exitCode=130)

@@ -46,6 +46,26 @@ class ScanBaselineWindow:
         _release(self.project.root / ".source-down/scan.release")
 
 
+class ConfigurationReadWindow:
+    def __init__(self, project, library, afterLoaded):
+        self.project = project
+        self.environment = dict(os.environ, LD_PRELOAD=str(library), SD_WATCH_CONFIG_ROOT=str(project.root))
+        if afterLoaded:
+            self.environment["SD_WATCH_CONFIG_AFTER_LOAD"] = "1"
+
+    def waitUntilPaused(self, watch):
+        return watch.waitForOutputState(filesPresent=[".source-down/config.ready"])
+
+    def release(self):
+        _release(self.project.root / ".source-down/config.release")
+
+    def waitUntilLoaded(self, watch):
+        return watch.waitForOutputState(filesPresent=[".source-down/config.loaded.ready"])
+
+    def releaseLoaded(self):
+        _release(self.project.root / ".source-down/config.loaded.release")
+
+
 class CleanupWindow:
     def __init__(self, project, library):
         self.project = project
@@ -146,6 +166,12 @@ class AccessTrace:
 
 
 class NativeAssertions:
+    @contextmanager
+    def configurationReadWindow(self, project, *, afterLoaded=False):
+        project.makeDirectory(".source-down")
+        with self.project({"fault.c": self.fixture("watch/configuration_window.c")}) as fixture:
+            yield ConfigurationReadWindow(project, _compile(self, fixture, "fault.c", "fault.so"), afterLoaded)
+
     @contextmanager
     def scanBaselineWindow(self, project):
         project.writeFiles({"target/scan.c": self.fixture("watch/scan.c")})

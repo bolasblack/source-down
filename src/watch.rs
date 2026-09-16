@@ -73,15 +73,16 @@ fn generate(
     if let Some(error) = after.failure().or_else(|| after.dynamic_failure()) {
         return Err(error.clone());
     }
-    let restart = before.config != after.config
+    let configuration_changed = before.config != after.config
+        || !after.same_configuration(scope, prepared.session().configuration_sources());
+    let restart = configuration_changed
         || before.programs != after.programs
         || external_changed(scope, &observed, before, &after);
     let stable = before.inputs == after.inputs
         && before.input_queries == after.input_queries
         && before.discovery == after.discovery
-        && before.config == after.config
+        && !configuration_changed
         && before.programs == after.programs
-        && after.same_configuration(prepared.session().configuration_sources())
         && after.same_reads(prepared.sources())
         && after
             .dependencies

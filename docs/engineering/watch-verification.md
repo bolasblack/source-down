@@ -334,3 +334,66 @@ Required plan evidence: complete, including native CI on all three systems.
 Natural host-wide resource exhaustion and silently non-notifying filesystems
 have not been measured; controlled EMFILE/EIO boundary failures and explicit Poll
 are tested without requiring those environments.
+
+## Configuration-window and atomic-repair corrections (2026-09-10)
+
+The review of `5ba6303` reproduced two failures at the real CLI boundary.
+[SPEC-CLI-011](../specs/cli.md#spec-cli-011) now explicitly includes the Session's
+loaded configuration in the reload decision. `generate` uses that same mismatch
+for both candidate rejection and Session replacement, so A observed before and
+after a transient B cannot leave the B Session running indefinitely.
+The comparison retains the loaded query's resolution/link facts as well as the
+actual file identity and bytes. Loading absent default configuration matches only
+current absence; an empty source collection cannot validate a restored file.
+
+[SPEC-CLI-010](../specs/cli.md#spec-cli-010) distinguishes directory discovery
+relevance from complete file repair facts. `Sample::has_recovery_fact` checks the
+actual query, resolved path, link and parent facts, and joins selected-file bodies
+with their discovery facts. An excluded, undeclared member remains eligible for
+unknown recovery. The observer's existing per-path facts retain identical-write
+deduplication across failed attempts; ordinary scope exclusions and safe link
+sampling remain with their existing owners.
+
+| Public scenario | RED evidence | GREEN evidence |
+| --- | --- | --- |
+| [A → B → A configuration read window](../../tests-e2e/cases/watch/test_configuration_window_linux.py) | `20260910T211139-939ee261d030`: B initialized, but waiting for the index timed out while candidates repeated | `20260910T211307-637fa4a4743c`: exactly B then A, accurate A page/search, no idle batches, exit 130 |
+| [Atomic replacement of the excluded script](../../tests-e2e/cases/watch/test_excluded_script_atomic_repair.py) | `20260910T211436-3898b7862fd7`: initialization failed once; atomic repair never published | `20260910T211631-1e66050fd48a`: one atomic save recovers, its declared dependency is indexed, identical bytes do not restart, exit 130 |
+| [Default configuration temporarily absent at load](../../tests-e2e/cases/watch/test_configuration_absent_window_linux.py) | `20260910T212535-82881f4e166d`: restored configuration was ignored and the published page omitted its plugin output | `20260910T212640-e9a94873941f`: A initializes once, publishes its exact appendix and is searchable |
+| [Configuration link resolves through a different hard-link path](../../tests-e2e/cases/watch/test_configuration_link_window_linux.py) | `20260910T212830-6e2a8fab0250`: equal identity/bytes concealed the loaded path mismatch; only one initialization | `20260910T212945-72e04e9b0338`: restored query chain causes the required second initialization, then stable publication and search |
+
+The existing known/unknown marker scenario also passes in
+`20260910T211631-cf5879ef02d7`. Run artifacts are under
+`.source-down/e2e/runs/<run-id>/`; each retains copied cases/specifications,
+binary hashes, command observations, results and its own reading entry.
+
+Unmodified copies of the original review probes pass against the final binary:
+the configuration race publishes after two batches; stable A publishes after
+one; atomic repair publishes at round three without an additional edit. All
+three exit 130 on interruption. The exact probe output and build/check logs are
+retained under `.source-down/e2e/fixes/watch-review-20260910/`.
+
+The production correction adds no polling, timer retry, argv-path inference or
+new state owner. The Linux configuration fixture controls only the real write
+boundary preceding Session construction and the plugin's initialize response;
+its bounded waits are test synchronization, with releases visible in the case.
+Implementation deviations and unresolved specification gaps: none identified
+within these two reproduced defects. These correction results are local Linux
+evidence; they do not extend the earlier native CI result to the new worktree.
+
+Final Linux gates pass on CLI SHA-256
+`d656e694577bb6cc851089aeab922929bfbc77662931597036b171b12cfd1127`:
+
+- `mise run lint`: formatting, strict Clippy and documentation checks pass.
+- `mise run test`: passes in 293.59 seconds, including all 103 instrumented E2E
+  scenarios (`20260910T213106-9db3704c0b56`); coverage is 94.60% Rust core,
+  96.43% Rust spec plugin and 94.17% Python project plugin.
+- `mise run review`: publishes 233 pages and the specification coverage report.
+- `mise run acceptance`: all 103 scenarios and their reading artifacts pass in
+  `20260910T213053-1a89fa9b3ca3`; all four new scenario pages were checked.
+- The original three probe/control runs also pass on this exact binary, with
+  two, one and three batches/rounds respectively and cancellation exit 130.
+
+The four RED runs above retain their original observations. The full suite and
+final code hashes are recorded separately from the initial focused GREEN runs.
+HEAD and the existing Git index entries are unchanged; this correction remains
+unstaged alongside the earlier work.

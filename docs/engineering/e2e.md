@@ -227,7 +227,18 @@ native fixture triggered while checking `pages/docs/z.md.md` after
 `pages/docs/a.md.md` has appeared. `waitUntilCallbackReturned` observes only the
 callback's marker through a presence wait. The separate recovery-batch pause,
 explicit release (also in `finally`), final publication assertions and product
-reaping checks retain their own places in the scenario.
+reaping checks retain their own places in the scenario. The configuration
+fixture's two-stage handshake remains independent.
+
+The configuration read-window fixture pauses the first `starting` diagnostic after
+the watch baseline and before Session construction. Its real preload hook only
+controls that I/O boundary. The case edits the configuration, explicitly releases
+construction, observes the plugin's actual initialize options, and restores the
+configuration before releasing the plugin response. `configurationReadWindow`
+owns compilation and marker setup; waits and releases remain explicit in the case.
+Its optional `afterLoaded` boundary pauses the missing-index adoption diagnostic
+after Session construction. This lets the absent-configuration scenario restore
+the same file before generation, preserving its identity and bytes.
 
 The [complete-suite verification record](e2e-readable-suite-verification.md) binds
 every original check to its migrated owner, platform, command and run evidence,

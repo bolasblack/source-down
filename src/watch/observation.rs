@@ -304,6 +304,35 @@ impl Sample {
         )
     }
 
+    pub fn has_recovery_fact(&self, scope: &Scope, path: &Path) -> bool {
+        let covers = |query: &Path, fact: &Fact| {
+            ((scope.root.join(query) == path || fact.resolved == path)
+                && (!matches!(fact.node, Node::File(None))
+                    || self
+                        .inputs
+                        .keys()
+                        .any(|input| scope.root.join(input) == fact.resolved)))
+                || fact.links.iter().any(|(link, _)| link == path)
+                || fact.parents.iter().any(|parent| {
+                    parent.path == path && parent.kind != filesystem::BoundaryKind::File
+                })
+        };
+        // HIDDEN CONTEXT: directory membership lacks a member's complete file fact.
+        covers(&scope.config, &self.config)
+            || self
+                .input_queries
+                .iter()
+                .chain(&self.discovery)
+                .chain(&self.programs)
+                .chain(&self.core)
+                .chain(&self.blocked)
+                .any(|(query, fact)| covers(query, fact))
+            || self
+                .dependencies
+                .iter()
+                .any(|(dependency, fact)| covers(Path::new(dependency.path()), fact))
+    }
+
     pub fn relevant(
         &self,
         scope: &Scope,
@@ -416,11 +445,19 @@ impl Sample {
         })
     }
 
-    pub fn same_configuration(&self, sources: &SourceStore) -> bool {
+    pub fn same_configuration(&self, scope: &Scope, sources: &SourceStore) -> bool {
+        // Loading absent default configuration reads no source file.
+        if sources.facts().is_empty() {
+            return matches!(self.config.node, Node::Missing(_));
+        }
         sources
-            .facts()
-            .values()
-            .all(|expected| file_fact(&self.config) == Some(expected))
+            .query_facts()
+            .get(&scope.root.join(&scope.config))
+            .is_some_and(|loaded| loaded.same_known(&self.config))
+            && sources
+                .facts()
+                .values()
+                .all(|expected| file_fact(&self.config) == Some(expected))
     }
 
     pub fn changed_known(&self, after: &Sample) -> bool {

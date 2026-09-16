@@ -325,8 +325,8 @@ impl Observer {
                 }
                 let sources = SourceStore::new(scope.root.clone());
                 let mut changed = false;
-                for (path, change) in hints.paths {
-                    if !scope.recovery_path(&path) || known.relevant(scope, &path, change) {
+                for path in hints.paths.into_keys() {
+                    if !scope.recovery_path(&path) || known.has_recovery_fact(scope, &path) {
                         continue;
                     }
                     let fact = filesystem::query(&sources, &path, QueryKind::UnlinkedFile, check)?;

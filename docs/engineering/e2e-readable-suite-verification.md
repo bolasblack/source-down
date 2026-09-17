@@ -3,8 +3,9 @@
 Proposal 003 implements all **68 original scenarios as 99 discovered targets**:
 core 24→29, link 10→17, watch-A 17→32 and watch-B 17→21. All four retained bodies
 are unchanged. The implementation, grouped runtime checks, bounded sensitivity
-experiments and all 99 source-order readability reviews are complete. All five final
-repository gates passed on Linux, including the relocated source release.
+experiments and all 99 source-order readability reviews are complete. The five
+recorded repository gates passed on Linux, including the relocated source release;
+the benchmark gate was not included in that validation.
 
 ## Evidence and baseline
 
@@ -207,7 +208,7 @@ ordinary-uid reruns and final watch run used real permissions and adequate inode
 capacity. All bounded negative runs retained their expected reading output and
 recorded command cleanup. No failure was converted to a skip to obtain GREEN.
 
-## Final repository gates
+## Recorded repository gates
 
 Implementation files were frozen before these commands. `MISE_DISABLE_TOOLS=java`
 and a task-specific mise cache avoid unrelated global tooling; `TMPDIR` is the
@@ -222,6 +223,31 @@ gate; executable/test sources remain frozen.
 | `mise run review` | PASS: 229 project/guide pages and spec coverage report published. | `final-review.log` |
 | `mise run acceptance` | PASS: all 99 cases, all command cleanup, and reading verification; 100 reading pages including the index. | `final-acceptance.log`; run `20260910T173909-2d3e22505c62` |
 | `mise run release` | PASS on x86_64-unknown-linux-gnu: extracted binary, native portability, relocated offline source rebuild, all 99 packaged E2E cases, and identical rendering by extracted/rebuilt binaries. | `final-release.log`; retained run `20260910T174215-25f2ef500301` |
+
+The 2026-09-17 CI follow-up exposed the missing benchmark coverage: `AccessTrace`
+had moved into `tests-e2e/support/native_fixtures.py`, while `tools/watch_benchmark.py`
+still imported it from a scenario module. The saved `final-gates.json` contains only
+the five commands above, and the saved benchmark source hash matches the broken
+committed file. These results do not establish that all CI or release-contract gates
+passed. Shared support migrations must account for their benchmark consumers too.
+
+Updating that import to the shared owner preserves the tracer implementation.
+The exact CI documentation/review/benchmark sequence reproduced the import failure,
+then passed after the repair, including all six generation workloads, search/read
+stages and six Native/Poll watch workloads. Red and green logs are retained under
+`.source-down/ci/35230428533/`; the green watch measurements are in
+`.source-down/watch-benchmark/20260917T141556.073944Z/results.json`.
+
+The same CI run's Windows helper tests exposed platform-dependent fixture output.
+Four checks failed when Python text streams converted LF to CRLF: continuation
+failure output, search waits and both log/checkpoint observations. Explicit CRLF
+text-stream configuration reproduced all four failures on Linux. The fixtures now
+write their declared bytes through binary streams, preserving flush points and the
+original byte assertions. The CRLF configuration remains in those existing tests
+as a cross-platform regression condition. The four checks then pass locally;
+`windows-newline-red.log` and `windows-newline-green.log` under the same CI evidence
+directory retain the results. This is controlled newline evidence, not a native
+Windows rerun result.
 
 The coverage bridge uses the instrumented CLI
 `8bd345dd77c9a35a38ba79620af3797f074b5201903ecace0efb9faf002ecc2e` and instrumented

@@ -178,12 +178,15 @@ class InPlace(E2ECase):
         self.assertTrue(command["cleanup_complete"])
 
     def test_search_waits_keep_distinct_exit_conditions(self):
+        # Exercise Windows text translation even when this test runs on Unix.
+        program = ("import sys; sys.stdout.reconfigure(newline='\\r\\n'); "
+                   "sys.stdout.buffer.write(b'needle\\n'); raise SystemExit(7)")
         for name, method in (("output", "waitForSearchOutput"), ("successful", "waitForSuccessfulSearch")):
             self.case(f"watch/test_{name}.py", f'''import sys
 from support import E2ECase
 class SearchWait(E2ECase):
     def test_scenario(self):
-        with self.project({{"search":"print('needle'); raise SystemExit(7)"}}) as project:
+        with self.project({{"search":{program!r}}}) as project:
             with project.sourceDown.withBinary(sys.executable).watchCommand(["-c", "import time; time.sleep(30)"]) as watch:
                 found = watch.{method}("needle", contains="needle", timeout=0.1)
                 self.assertRunResult(found, exitCode=7, stdout=b"needle\\n")
@@ -235,9 +238,10 @@ from support import E2ECase
 class LogRead(E2ECase):
     def test_scenario(self):
         program = """import pathlib, sys, time
-print('first', file=sys.stderr, flush=True)
+sys.stderr.reconfigure(newline='\\\\r\\\\n')
+sys.stderr.buffer.write(b'first\\\\n'); sys.stderr.buffer.flush()
 while not pathlib.Path('next').exists(): time.sleep(0.01)
-print('second', file=sys.stderr, flush=True)
+sys.stderr.buffer.write(b'second\\\\n'); sys.stderr.buffer.flush()
 pathlib.Path('done').touch()
 while True: time.sleep(0.01)
 """
@@ -295,9 +299,10 @@ from support import E2ECase
 class LogIntervals(E2ECase):
     def test_scenario(self):
         program = """import pathlib, sys, time
-print('first', file=sys.stderr, flush=True)
+sys.stderr.reconfigure(newline='\\\\r\\\\n')
+sys.stderr.buffer.write(b'first\\\\n'); sys.stderr.buffer.flush()
 while not pathlib.Path('next').exists(): time.sleep(0.01)
-print('second', file=sys.stderr, flush=True)
+sys.stderr.buffer.write(b'second\\\\n'); sys.stderr.buffer.flush()
 while True: time.sleep(0.01)
 """
         with self.project() as project:
@@ -960,9 +965,11 @@ class Read(E2ECase):
         )
         for name, body, exitCode, malformed, _, count in variants:
             program = ("import json,sys\n"
+                       "sys.stdout.reconfigure(newline='\\r\\n')\n"
                        "offset = int(sys.argv[sys.argv.index('--offset')+1])\n"
                        f"body = {body!r} if offset == 0 else {last!r}\n"
-                       f"print('not JSON' if {malformed!r} else json.dumps({{'body':body}}))\n"
+                       f"output = 'not JSON' if {malformed!r} else json.dumps({{'body':body}})\n"
+                       "sys.stdout.buffer.write((output + '\\n').encode('utf-8'))\n"
                        f"sys.exit({exitCode})\n")
             assertion = ('self.assertReadResult(result, exitCode=7, stdout=b"not JSON\\n")' if exitCode else
                          'self.assertCompleteUtf8Read(result, "甲乙", maxCharsPerPage=1)')

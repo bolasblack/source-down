@@ -58,6 +58,11 @@ Only explicit UTF-8 decoding converts output to text; malformed text and newline
 contracts use exact bytes. Shared long input and expected material lives once in
 `fixtures/`, used both by the test and its comment's include directive.
 
+Controlled Python programs with exact stream-byte expectations write explicit
+bytes to stdout or stderr. Their newline-sensitive checks also exercise CRLF text
+stream translation on every host; process capture and assertions retain the
+original bytes, including deliberate LF/CRLF differences.
+
 Read concurrently published files through `project.read_bytes()`. Its native
 reader permits replacement and deletion while a read handle is open, so an
 observation cannot manufacture a Windows publication failure. Deliberate file

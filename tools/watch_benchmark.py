@@ -16,7 +16,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests-e2e"))
 from support.case import Project, RunContext
-from cases.watch.test_body_reads_linux import AccessTrace
+from support.native_fixtures import AccessTrace
 
 
 PLUGIN = '''import json, os, sys

@@ -70,6 +70,18 @@ Action pins were resolved from these upstream release tags with the packaged act
 
 Repository identity: [bolasblack/source-down](https://github.com/bolasblack/source-down), confirmed by the owner. `Cargo.toml` owns the version; only the `source-down` package entry in `Cargo.lock` follows a bump. Release notes live in `docs/releases/<tag>.md`.
 
+## First release
+
+The first release may keep the exact version already owned by `Cargo.toml` and the `source-down` entry in `Cargo.lock`. Before choosing this exception, fetch `origin`, verify that neither local nor remote refs contain a release tag for the configured prefix, and confirm through authenticated GitHub access that the repository has no published releases or drafts. Missing local tags alone do not establish a first release.
+
+After confirming that state, validate the unchanged version explicitly:
+
+```sh
+python3 .github/release/check.py --version-file Cargo.toml --tag-prefix v --next-version 0.1.0 --first-release
+```
+
+`--first-release` is valid only with `--next-version`. It requires the candidate to equal the owner's version exactly and rejects any existing local release tag for the configured prefix. It asserts the operator's separate remote-state verification; the helper does not query GitHub. Without this flag, the candidate must remain strictly greater in SemVer precedence than the current version. The exception changes neither the note, test, annotated-tag, nor remote approval requirements below.
+
 ## Flow
 
 1. The skill verifies repository identity, branch, release state, and tests before preparing one local release commit and annotated tag.

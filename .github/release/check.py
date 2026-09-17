@@ -113,6 +113,11 @@ def git(*args: str, strip: bool = True) -> str:
     return result.stdout.strip() if strip else result.stdout
 
 
+def release_tags(prefix: str) -> list[str]:
+    return [tag for tag in git("tag", "--list", f"{prefix}*").splitlines()
+            if SEMVER_RE.fullmatch(tag[len(prefix):])]
+
+
 def check_release(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog=".github/release/check.py",
@@ -123,10 +128,15 @@ def check_release(argv: list[str]) -> int:
     parser.add_argument("--version-file", default="package.json")
     parser.add_argument("--notes-dir", default="docs/releases")
     parser.add_argument("--next-version")
+    parser.add_argument("--first-release", action="store_true",
+                        help="keep the current version after separately verifying no remote releases exist")
     parser.add_argument("--previous-tag", action="store_true")
     parser.add_argument("--version-ref")
     parser.add_argument("tag", nargs="?")
     args = parser.parse_args(argv)
+
+    if args.first_release and args.next_version is None:
+        parser.error("--first-release requires --next-version")
 
     owner = Path(args.version_file)
     if args.previous_tag:
@@ -134,11 +144,7 @@ def check_release(argv: list[str]) -> int:
             parser.error("--previous-tag cannot be combined with --tagged, --next-version, or a tag")
         current = read_version_at(owner, args.version_ref) if args.version_ref else read_version(owner)
         expected = f"{args.tag_prefix}{current}"
-        candidates = []
-        for tag_name in git("tag", "--list", f"{args.tag_prefix}*").splitlines():
-            candidate = tag_name[len(args.tag_prefix) :]
-            if SEMVER_RE.fullmatch(candidate):
-                candidates.append(tag_name)
+        candidates = release_tags(args.tag_prefix)
         if expected not in candidates:
             if candidates:
                 fail(f"current version {current} has no matching release tag {expected}")
@@ -164,6 +170,13 @@ def check_release(argv: list[str]) -> int:
         except CheckFailure:
             parser.error(f"invalid semantic version: {args.next_version}")
         current = read_version_at(owner, args.version_ref) if args.version_ref else read_version(owner)
+        if args.first_release:
+            if candidate != current:
+                fail(f"first release version {candidate} must equal current version {current}")
+            if release_tags(args.tag_prefix):
+                fail("first release requires no existing release tags")
+            print(f"[release] first release keeps current version {current}; no local release tags")
+            return 0
         if semver_precedence(candidate) <= semver_precedence(current):
             fail(f"next version {candidate} must be greater than current version {current}")
         print(f"[release] next version {candidate} is greater than current version {current}")

@@ -6,7 +6,7 @@ use source_down::engine::Session;
 use std::sync::{Arc, atomic::AtomicBool};
 
 #[test]
-fn a_session_reuses_one_process_for_separate_complete_rounds() {
+fn spec_plg_003_a_session_reuses_one_process_for_separate_complete_rounds() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("a.rs"), "// {% note 'first' %}\n").unwrap();
     std::fs::write(root.path().join("b.rs"), "// {% note 'second' %}\n").unwrap();

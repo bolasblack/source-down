@@ -41,3 +41,8 @@ decisions/AGD-013_readable-e2e-with-one-execution-owner.md -(r)-> decisions/AGD-
 decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md -(r)-> decisions/AGD-002_choose-rust-and-source-range-parsing.md
 decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md -(r)-> decisions/AGD-009_own-persistent-plugin-processes-in-one-session-driver.md
 decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md -(r)-> decisions/AGD-012_release-native-platform-artifacts.md
+decisions/AGD-015_assemble-review-packets-through-the-public-cli.md -(r)-> decisions/AGD-001_adopt-rule-0-spec-first-development.md
+decisions/AGD-015_assemble-review-packets-through-the-public-cli.md -(r)-> decisions/AGD-003_use-source-down-for-its-own-review.md
+decisions/AGD-015_assemble-review-packets-through-the-public-cli.md -(r)-> decisions/AGD-007_check-spec-references-through-a-project-plugin.md
+decisions/AGD-015_assemble-review-packets-through-the-public-cli.md -(r)-> decisions/AGD-008_enforce-ninety-percent-test-coverage.md
+decisions/AGD-016_keep-alignment-runs-outside-the-project.md -(u)-> decisions/AGD-015_assemble-review-packets-through-the-public-cli.md

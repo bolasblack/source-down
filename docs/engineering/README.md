@@ -8,6 +8,7 @@ The URL-only link operation and cross-language inline placement are checked in [
 Native notification scheduling, explicit content polling, repair windows and page ownership are tracked in [watch acceptance](watch-verification.md).
 Search contracts, real boundary evidence, predeclared queries and measurement budgets are tracked in [search acceptance](search-verification.md).
 The current default snapshot publication, short handles and direct file reads are checked in [CLI and file-read acceptance](search-cli-verification.md).
+Per-clause review packets, their fingerprint and the alignment ledger are governed by the [spec alignment contract](spec-alignment.md).
 The [readable E2E contract](e2e.md), [migration ledger](e2e-migration.md) and
 [delivery record](e2e-verification.md) describe the shared Python acceptance collection,
 retained native tests, development order and per-run reading artifacts.

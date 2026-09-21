@@ -4,7 +4,7 @@ use source_down::model::{Arguments, MarkdownFragment, Request, SourceSpan, Sourc
 use std::fs;
 
 #[test]
-fn builtin_plugins_describe_each_request_and_leave_reads_to_the_round() {
+fn spec_blt_001_builtin_plugins_describe_each_request_and_leave_reads_to_the_round() {
     use source_down::model::{Content, ContentNode, PluginBatch, PluginResult};
     let root = tempfile::tempdir().unwrap();
     let mut sources = SourceStore::new(root.path().canonicalize().unwrap());
@@ -63,6 +63,9 @@ fn builtin_plugins_describe_each_request_and_leave_reads_to_the_round() {
             .run(&PluginBatch::default(), &mut sources)
             .unwrap();
         assert!(empty.results.is_empty() && empty.dependencies.is_empty());
+        assert!(empty.append.is_empty());
+        assert!(empty.reports.is_empty());
+        assert!(empty.diagnostics.is_empty());
     }
 }
 
@@ -174,7 +177,7 @@ fn success(result: &Generated) -> (&str, &[SourceSpan]) {
 }
 
 #[test]
-fn line_arrays_and_strings_select_identical_bytes_sources_and_dependencies() {
+fn spec_blt_003_line_arrays_and_strings_select_identical_bytes_sources_and_dependencies() {
     // SPEC-BLT-005: both public parameter forms denote one inclusive line range.
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("notes.txt"), "first\r\n\r\n末尾").unwrap();
@@ -280,7 +283,7 @@ fn line_array_shapes_precede_reads_and_numeric_ranges_follow_reads() {
 }
 
 #[test]
-fn markdown_paths_disambiguate_each_actual_parent_before_descending() {
+fn spec_blt_007_markdown_paths_disambiguate_each_actual_parent_before_descending() {
     // SPEC-BLT-007: array paths and shorthand share one hierarchy and raw range.
     let root = tempfile::tempdir().unwrap();
     let original = "# 重试策略\r\n## next_delay\r\nfirst\r\n# 重试策略\r\n## next_delay\r\nsecond";
@@ -306,7 +309,7 @@ fn markdown_paths_disambiguate_each_actual_parent_before_descending() {
 }
 
 #[test]
-fn include_uses_file_type_for_structure_and_complete_markdown() {
+fn spec_blt_003_blt_006_include_uses_file_type_for_structure_and_complete_markdown() {
     // SPEC-BLT-003, SPEC-BLT-006: one structural path works across material types.
     let root = tempfile::tempdir().unwrap();
     let text = "# Title\r\n\r\n<a id=\"detail\"></a>\r\n## Details\r\nraw ```` text";
@@ -585,7 +588,7 @@ fn python_decorators_branches_and_nested_definitions_keep_actual_ownership() {
 }
 
 #[test]
-fn exact_markdown_names_empty_headings_and_invalid_paths_have_distinct_results() {
+fn spec_blt_007_exact_markdown_names_empty_headings_and_invalid_paths_have_distinct_results() {
     // SPEC-BLT-004, SPEC-BLT-007: names retain data identity and actual levels.
     let root = tempfile::tempdir().unwrap();
     fs::write(
@@ -653,7 +656,7 @@ fn exact_markdown_names_empty_headings_and_invalid_paths_have_distinct_results()
 }
 
 #[test]
-fn structural_selection_requires_valid_source_and_complete_inventories() {
+fn spec_blt_007_structural_selection_requires_valid_source_and_complete_inventories() {
     // SPEC-ENT-001 through SPEC-ENT-006: parsing, extraction and child completeness differ.
     let root = tempfile::tempdir().unwrap();
     for (file, text, id, error) in [
@@ -719,7 +722,8 @@ fn structural_selection_requires_valid_source_and_complete_inventories() {
 }
 
 #[test]
-fn include_validates_selection_arguments_and_retains_failed_material_dependencies() {
+fn spec_blt_002_blt_003_include_validates_selection_arguments_and_retains_failed_material_dependencies()
+ {
     // SPEC-BLT-002 through SPEC-BLT-006, SPEC-PLG-013.
     let root = tempfile::tempdir().unwrap();
     fs::write(
@@ -782,7 +786,7 @@ fn error_code(result: &Generated) -> &str {
 }
 
 #[test]
-fn include_preserves_source_bytes_and_exact_provenance() {
+fn spec_blt_002_blt_003_include_preserves_source_bytes_and_exact_provenance() {
     // SPEC-BLT-003: publication and indexing preserve actual material bytes.
     let root = tempfile::tempdir().unwrap();
     let original = "# Overview\r\n\r\nText — [link](other.md)";
@@ -851,7 +855,7 @@ fn include_sections_follow_commonmark_headings_and_own_their_anchors() {
 }
 
 #[test]
-fn include_code_keeps_selected_bytes_and_uses_safe_fences() {
+fn spec_blt_006_include_code_keeps_selected_bytes_and_uses_safe_fences() {
     // SPEC-BLT-005, SPEC-BLT-006: CRLF and unterminated final lines survive snippet framing.
     let root = tempfile::tempdir().unwrap();
     let original = "ignored\r\nlet ticks = \"````\";  \r\n// Text —";
@@ -933,7 +937,7 @@ fn section_matching_handles_setext_inline_text_and_duplicate_owners() {
 }
 
 #[test]
-fn include_rejects_bad_arguments_missing_or_invalid_bytes_and_empty_material() {
+fn spec_blt_002_include_rejects_bad_arguments_missing_or_invalid_bytes_and_empty_material() {
     // SPEC-BLT-002: each rejected call retains its specific error through generation.
     let root = tempfile::tempdir().unwrap();
     fs::write(
@@ -1046,7 +1050,7 @@ fn include_code_rejects_nonexistent_lines_and_invalid_argument_types() {
 }
 
 #[test]
-fn material_symlinks_must_stay_inside_the_project() {
+fn spec_blt_002_material_symlinks_must_stay_inside_the_project() {
     // SPEC-BLT-002: resolved source provenance is canonical and rooted.
     use source_down::platform::symlink_file as symlink;
     let root = tempfile::tempdir().unwrap();

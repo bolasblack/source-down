@@ -46,6 +46,11 @@ description = "Render the complete project and authored guide"
 depends = ["build"]
 run = "target/release/source-down render src tools tests tests-e2e examples docs/guide"
 
+[tasks.alignment]
+description = "Render the project and continue the latest alignment round (pass -- --new-run to start a round)"
+depends = ["review"]
+run = "python tools/spec_alignment.py"
+
 [tasks.acceptance]
 description = "Run readable E2E scenarios and render this run's acceptance results"
 depends = ["build"]

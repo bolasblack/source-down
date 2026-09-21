@@ -395,7 +395,7 @@ fn all_output_positions_preserve_order_layout_and_each_material_link() {
 }
 
 #[test]
-fn main_call_failures_keep_all_dependencies_and_update_only_valid_reports() {
+fn spec_blt_002_plg_007_main_call_failures_keep_all_dependencies_and_update_only_valid_reports() {
     // SPEC-PLG-007, SPEC-CLI-004: continue nodes and original requests after content errors.
     let mut value = response(json!([
         call("missing.md", json!({})),
@@ -504,7 +504,7 @@ fn failed_report_or_appendix_preserves_all_old_artifacts_and_stops_later_batches
 }
 
 #[test]
-fn full_validation_and_later_internal_failures_override_main_check_errors() {
+fn spec_plg_007_full_validation_and_later_internal_failures_override_main_check_errors() {
     // SPEC-PLG-007: validation precedes every call, then internal results remain validated.
     for (bad, expected) in [
         (
@@ -944,7 +944,7 @@ fn cancellation_and_plugin_health_are_checked_after_a_delegated_material_read() 
 }
 
 #[test]
-fn builtin_and_delegated_includes_share_one_rounds_source_bytes() {
+fn spec_blt_001_builtin_and_delegated_includes_share_one_rounds_source_bytes() {
     // SPEC-PLG-007: one material snapshot is shared across all operation callers.
     let root = tempfile::tempdir().unwrap();
     fs::write(

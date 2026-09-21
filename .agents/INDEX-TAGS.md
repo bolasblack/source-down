@@ -17,3 +17,5 @@ decisions/AGD-011_share-standard-content-operations-for-plugin-composition.md: #
 decisions/AGD-012_release-native-platform-artifacts.md: #architecture, #tooling, #conformance
 decisions/AGD-013_readable-e2e-with-one-execution-owner.md: #conformance, #self-hosting, #tooling
 decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md: #architecture, #tooling, #conformance
+decisions/AGD-015_assemble-review-packets-through-the-public-cli.md: #conformance, #tooling
+decisions/AGD-016_keep-alignment-runs-outside-the-project.md: #tooling, #conformance

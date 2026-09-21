@@ -339,7 +339,7 @@ emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],'results':[],'a
 }
 
 #[test]
-fn later_plugins_run_after_checked_errors_but_execution_failures_keep_all_outputs() {
+fn spec_plg_003_later_plugins_run_after_checked_errors_but_execution_failures_keep_all_outputs() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("a.rs"), "// {% note %}\n").unwrap();
     std::fs::write(root.path().join("b.py"), "pass\n").unwrap();

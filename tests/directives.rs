@@ -50,7 +50,7 @@ fn positional_and_named_scalars_preserve_quoted_delimiters_and_types() {
 
 // SPEC-DIR-004: block contexts precede tag parsing; tag parameters precede inline parsing.
 #[test]
-fn code_and_html_stay_literal_while_tags_expand_in_prose_containers() {
+fn spec_dir_004_code_and_html_stay_literal_while_tags_expand_in_prose_containers() {
     let text = concat!(
         "```text\n{% hidden 'fenced' %}\n```\n\n",
         "    {% hidden 'indented' %}\n\n",
@@ -165,7 +165,7 @@ fn quoted_escapes_and_scalar_boundaries_are_data() {
 
 // SPEC-DIR-004: extended leaf blocks establish subsequent Markdown context.
 #[test]
-fn block_rules_override_cross_line_code_spans() {
+fn spec_dir_004_block_rules_override_cross_line_code_spans() {
     for text in [
         "`\n{% overview %}\n`\n",
         "{% overview %}\n---\n",

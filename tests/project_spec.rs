@@ -239,7 +239,7 @@ fn commonmark_sections_inside_one_lf_line_keep_exact_bytes_without_range_expansi
 }
 
 #[test]
-fn unused_specs_fail_for_zero_or_partial_references_and_recover_when_all_are_used() {
+fn spec_prj_003_unused_specs_fail_for_zero_or_partial_references_and_recover_when_all_are_used() {
     let root = project();
     std::fs::write(root.path().join("docs/specs/api.md"), "<a id=\"spec-api-001\"></a>\n## SPEC-API-001 First\n\nFirst requirement.\n\n<a id=\"spec-api-002\"></a>\n## SPEC-API-002 Second\n\nSecond requirement.\n").unwrap();
     std::fs::write(root.path().join("a.rs"), "fn a() {}\n").unwrap();
@@ -283,7 +283,8 @@ fn unused_specs_fail_for_zero_or_partial_references_and_recover_when_all_are_use
 }
 
 #[test]
-fn unknown_and_invalid_requests_are_located_and_listed_while_valid_references_are_counted() {
+fn spec_prj_003_unknown_and_invalid_requests_are_located_and_listed_while_valid_references_are_counted()
+ {
     let root = project();
     std::fs::write(
         root.path().join("docs/specs/api.md"),
@@ -351,7 +352,7 @@ fn markdown_examples_are_not_definitions_and_an_empty_inventory_is_an_error() {
 }
 
 #[test]
-fn examples_plain_mentions_and_include_do_not_count_as_spec_references() {
+fn spec_prj_003_examples_plain_mentions_and_include_do_not_count_as_spec_references() {
     let root = project();
     std::fs::write(
         root.path().join("docs/specs/api.md"),

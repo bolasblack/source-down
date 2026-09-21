@@ -58,7 +58,7 @@ fn markdown_is_an_authored_page_with_exact_original_locations() {
 }
 
 #[test]
-fn markdown_context_mixed_inputs_and_empty_plugins_share_the_real_batch() {
+fn spec_plg_003_markdown_context_mixed_inputs_and_empty_plugins_share_the_real_batch() {
     // SPEC-REN-014, SPEC-PLG-003, SPEC-PLG-005, SPEC-CLI-007.
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("book")).unwrap();

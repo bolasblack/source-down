@@ -411,8 +411,12 @@ pub fn run(
                 continue;
             };
             apply_progress(&scope, &mut owned, &evaluated.progress);
+            // {% spec "cli-005" %}
             for report in &outcome.reports {
-                eprintln!("source-down: report {}", report.display());
+                eprintln!(
+                    "source-down: report {}",
+                    path_text(report.strip_prefix(&scope.root).unwrap())?
+                );
             }
             if outcome.check_failed {
                 eprintln!("source-down: watch round {round}: checks failed; watching for changes");

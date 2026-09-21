@@ -1,0 +1,586 @@
+{
+  "valid": [
+    {
+      "path": "rust_raw.rs",
+      "source": "let s = r###\"\n/* hidden */\n/// hidden\n\"###;\n// visible\n",
+      "language": "rust",
+      "fenced_code": [
+        "```rust\nlet s = r###\"\n/* hidden */\n/// hidden\n\"###;\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "rust_nested.rs",
+      "source": "/* outer /* inner */ end */",
+      "language": "rust",
+      "fenced_code": [],
+      "prose": [
+        "outer /* inner */ end"
+      ],
+      "fragments": [],
+      "source_blocks": 1
+    },
+    {
+      "path": "ocaml_quoted.ml",
+      "source": "(* \"*)\" {|*)|} *)",
+      "language": "ocaml",
+      "fenced_code": [],
+      "prose": [
+        "\"*)\" {|*)|}"
+      ],
+      "fragments": [],
+      "source_blocks": 1
+    },
+    {
+      "path": "ocaml_nested.ml",
+      "source": "(* outer (* inner *) end *)",
+      "language": "ocaml",
+      "fenced_code": [],
+      "prose": [
+        "outer (* inner *) end"
+      ],
+      "fragments": [],
+      "source_blocks": 1
+    },
+    {
+      "path": "ocaml_extension.ml",
+      "source": "let x = {%é|(* hidden *)|}\n(* visible *)\n",
+      "language": "ocaml",
+      "fenced_code": [
+        "```ocaml\nlet x = {%é|(* hidden *)|}\n```\n"
+      ],
+      "prose": [
+        "visible"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "ocaml_normalized.ml",
+      "source": "let x = {é|(* hidden *)|é}\n(* visible *)\n",
+      "language": "ocaml",
+      "fenced_code": [
+        "```ocaml\nlet x = {é|(* hidden *)|é}\n```\n"
+      ],
+      "prose": [
+        "visible"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "ocaml_character.ml",
+      "source": "let newline = '\r\n'\n(* visible *)\n",
+      "language": "ocaml",
+      "fenced_code": [
+        "```ocaml\nlet newline = '\r\n'\n```\n"
+      ],
+      "prose": [
+        "visible"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "rust_shebang.rs",
+      "source": "#!/usr/bin//rust-script --label 'example\n// visible\n",
+      "language": "rust",
+      "fenced_code": [
+        "```rust\n#!/usr/bin//rust-script --label 'example\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "ocaml_shebang.ml",
+      "source": "#!/usr/bin/env ocaml (* \"\n(* visible *)\n",
+      "language": "ocaml",
+      "fenced_code": [
+        "```ocaml\n#!/usr/bin/env ocaml (* \"\n```\n"
+      ],
+      "prose": [
+        "visible"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "types.rs",
+      "source": "fn invalid_type() -> Unknown { 3 }\n// visible\n",
+      "language": "rust",
+      "fenced_code": [
+        "```rust\nfn invalid_type() -> Unknown { 3 }\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.js",
+      "source": "// visible\nconst template = `\n// hidden\n/* hidden */ ${1 + 2}`;\nconst regex = /[/*]{2}/g; const division = 8 / 2;\nconst element = <p> // literal /* text */ </p>; // stays\n",
+      "language": "javascript",
+      "fenced_code": [
+        "```javascript\nconst template = `\n// hidden\n/* hidden */ ${1 + 2}`;\nconst regex = /[/*]{2}/g; const division = 8 / 2;\nconst element = <p> // literal /* text */ </p>; // stays\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.mjs",
+      "source": "// visible\nconst template = `\n// hidden\n/* hidden */ ${1 + 2}`;\nconst regex = /[/*]{2}/g; const division = 8 / 2;\nconst element = <p> // literal /* text */ </p>; // stays\n",
+      "language": "javascript",
+      "fenced_code": [
+        "```javascript\nconst template = `\n// hidden\n/* hidden */ ${1 + 2}`;\nconst regex = /[/*]{2}/g; const division = 8 / 2;\nconst element = <p> // literal /* text */ </p>; // stays\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.cjs",
+      "source": "// visible\nconst template = `\n// hidden\n/* hidden */ ${1 + 2}`;\nconst regex = /[/*]{2}/g; const division = 8 / 2;\nconst element = <p> // literal /* text */ </p>; // stays\n",
+      "language": "javascript",
+      "fenced_code": [
+        "```javascript\nconst template = `\n// hidden\n/* hidden */ ${1 + 2}`;\nconst regex = /[/*]{2}/g; const division = 8 / 2;\nconst element = <p> // literal /* text */ </p>; // stays\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.jsx",
+      "source": "// visible\nconst template = `\n// hidden\n/* hidden */ ${1 + 2}`;\nconst regex = /[/*]{2}/g; const division = 8 / 2;\nconst element = <p> // literal /* text */ </p>; // stays\n",
+      "language": "jsx",
+      "fenced_code": [
+        "```jsx\nconst template = `\n// hidden\n/* hidden */ ${1 + 2}`;\nconst regex = /[/*]{2}/g; const division = 8 / 2;\nconst element = <p> // literal /* text */ </p>; // stays\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.ts",
+      "source": "// visible\nexport interface Box<T> { value: T }\nconst f = <T>(x: T) => x;\n",
+      "language": "typescript",
+      "fenced_code": [
+        "```typescript\nexport interface Box<T> { value: T }\nconst f = <T>(x: T) => x;\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.mts",
+      "source": "// visible\nexport interface Box<T> { value: T }\nconst f = <T>(x: T) => x;\n",
+      "language": "typescript",
+      "fenced_code": [
+        "```typescript\nexport interface Box<T> { value: T }\nconst f = <T>(x: T) => x;\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.cts",
+      "source": "// visible\nexport interface Box<T> { value: T }\nconst f = <T>(x: T) => x;\n",
+      "language": "typescript",
+      "fenced_code": [
+        "```typescript\nexport interface Box<T> { value: T }\nconst f = <T>(x: T) => x;\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "expression.js",
+      "source": "const x = `\n// literal\n${\n// visible\n1}`;\n",
+      "language": "javascript",
+      "fenced_code": [
+        "```javascript\nconst x = `\n// literal\n${\n```\n",
+        "```javascript\n1}`;\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 3
+    },
+    {
+      "path": "expression.tsx",
+      "source": "const x = <p>{\n// visible\n'// literal'\n}</p>;\n",
+      "language": "tsx",
+      "fenced_code": [
+        "```tsx\nconst x = <p>{\n```\n",
+        "```tsx\n'// literal'\n}</p>;\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 3
+    },
+    {
+      "path": "expression.py",
+      "source": "x = f'''\n# literal\n{(\n# visible\n1\n)}'''\n",
+      "language": "python",
+      "fenced_code": [
+        "```python\nx = f'''\n# literal\n{(\n```\n",
+        "```python\n1\n)}'''\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 3
+    },
+    {
+      "path": "literal.py",
+      "source": "# Guide\r\n#\r\n#   detail\r\n\"\"\"Module docstring\n# literal, not prose\n\"\"\"\nraw = r'''\n# raw text\n'''\ndata = b'# bytes'\ntemplate = f'''\n# template text {1 + 2}\n'''\nvalue: str = unknown # stays\n",
+      "language": "python",
+      "fenced_code": [
+        "```python\n\"\"\"Module docstring\n# literal, not prose\n\"\"\"\nraw = r'''\n# raw text\n'''\ndata = b'# bytes'\ntemplate = f'''\n# template text {1 + 2}\n'''\nvalue: str = unknown # stays\n```\n"
+      ],
+      "prose": [
+        "Guide\n\n  detail\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.pyi",
+      "source": "# Guide\r\n#\r\n#   detail\r\n\"\"\"Module docstring\n# literal, not prose\n\"\"\"\nraw = r'''\n# raw text\n'''\ndata = b'# bytes'\ntemplate = f'''\n# template text {1 + 2}\n'''\nvalue: str = unknown # stays\n",
+      "language": "python",
+      "fenced_code": [
+        "```python\n\"\"\"Module docstring\n# literal, not prose\n\"\"\"\nraw = r'''\n# raw text\n'''\ndata = b'# bytes'\ntemplate = f'''\n# template text {1 + 2}\n'''\nvalue: str = unknown # stays\n```\n"
+      ],
+      "prose": [
+        "Guide\n\n  detail\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "literal.go",
+      "source": "// Guide\r\n//\r\n//  detail\r\npackage example\nvar raw = `\n// hidden\n/* hidden */\n`\nvar slash = '/' // stays\n",
+      "language": "go",
+      "fenced_code": [
+        "```go\npackage example\nvar raw = `\n// hidden\n/* hidden */\n`\nvar slash = '/' // stays\n```\n"
+      ],
+      "prose": [
+        "Guide\n\n detail\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "bytes.rs",
+      "source": "fn one() {\tlet x = 1; }  \r\n\r\nfn two() {}\r\n",
+      "language": "rust",
+      "fenced_code": [
+        "```rust\nfn one() {\tlet x = 1; }  \r\n\r\nfn two() {}\r\n```\n"
+      ],
+      "prose": [],
+      "fragments": [
+        "bytes.rs:L1-L3",
+        "· bytes [0,42)"
+      ],
+      "source_blocks": 1
+    },
+    {
+      "path": "decorated.rs",
+      "source": "/**\n * Intro\n *\n * - parent\n *   - child\n */",
+      "language": "rust",
+      "fenced_code": [],
+      "prose": [
+        "Intro\n\n- parent\n  - child"
+      ],
+      "fragments": [],
+      "source_blocks": 1
+    },
+    {
+      "path": "indent.mli",
+      "source": "(**\n    code\n*)",
+      "language": "ocaml",
+      "fenced_code": [],
+      "prose": [
+        "    code"
+      ],
+      "fragments": [],
+      "source_blocks": 1
+    },
+    {
+      "path": "layout.rs",
+      "source": "/* First */\n \t\n/* Second */\n",
+      "language": "rust",
+      "fenced_code": [],
+      "prose": [
+        "First",
+        "Second"
+      ],
+      "fragments": [
+        "First\n\n \t\n"
+      ],
+      "source_blocks": 2
+    },
+    {
+      "path": "maximal.rs",
+      "source": "fn one() {}\n\nfn two() {}\n",
+      "language": "rust",
+      "fenced_code": [
+        "```rust\nfn one() {}\n\nfn two() {}\n```\n"
+      ],
+      "prose": [],
+      "fragments": [],
+      "source_blocks": 1
+    },
+    {
+      "path": "trailing.rs",
+      "source": "fn main() {} // stays\r\n",
+      "language": "rust",
+      "fenced_code": [
+        "```rust\nfn main() {} // stays\r\n```\n"
+      ],
+      "prose": [],
+      "fragments": [],
+      "source_blocks": 1
+    },
+    {
+      "path": "group.rs",
+      "source": "  // A\n  //\n  //   B\n",
+      "language": "rust",
+      "fenced_code": [],
+      "prose": [
+        "A\n\n  B\n"
+      ],
+      "fragments": [],
+      "source_blocks": 1
+    },
+    {
+      "path": "fence.rs",
+      "source": "let x = \"````\";",
+      "language": "rust",
+      "fenced_code": [
+        "`````rust\nlet x = \"````\";\n`````\n"
+      ],
+      "prose": [],
+      "fragments": [
+        "fence.rs:L1-L1",
+        "· bytes [0,15)"
+      ],
+      "source_blocks": 1
+    },
+    {
+      "path": "lists.rs",
+      "source": "// - One\n// - Two\n\n// - Three\n// - Four\n",
+      "language": "rust",
+      "fenced_code": [],
+      "prose": [
+        "- One\n- Two\n",
+        "- Three\n- Four\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "interface.mli",
+      "source": "val x : 'a -> 'a\n(* visible *)\n",
+      "language": "ocaml",
+      "fenced_code": [
+        "```ocaml\nval x : 'a -> 'a\n```\n"
+      ],
+      "prose": [
+        "visible"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "quoted.go",
+      "source": "// visible\npackage p\nvar quoted = \"/* hidden */ // hidden\"\n",
+      "language": "go",
+      "fenced_code": [
+        "```go\npackage p\nvar quoted = \"/* hidden */ // hidden\"\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "regex.ts",
+      "source": "// visible\nconst regex = /[/*]{2}/g;\nconst template = `/* hidden */ // hidden`;\n",
+      "language": "typescript",
+      "fenced_code": [
+        "```typescript\nconst regex = /[/*]{2}/g;\nconst template = `/* hidden */ // hidden`;\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "regex.tsx",
+      "source": "// visible\nconst regex = /[/*]{2}/g;\nconst template = `/* hidden */ // hidden`;\n",
+      "language": "tsx",
+      "fenced_code": [
+        "```tsx\nconst regex = /[/*]{2}/g;\nconst template = `/* hidden */ // hidden`;\n```\n"
+      ],
+      "prose": [
+        "visible\n"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "first_closer.js",
+      "source": "/* outer /* inner */\nconst after = 1;\n",
+      "language": "javascript",
+      "fenced_code": [
+        "```javascript\nconst after = 1;\n```\n"
+      ],
+      "prose": [
+        "outer /* inner"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "first_closer.ts",
+      "source": "/* outer /* inner */\nconst after: number = 1;\n",
+      "language": "typescript",
+      "fenced_code": [
+        "```typescript\nconst after: number = 1;\n```\n"
+      ],
+      "prose": [
+        "outer /* inner"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    },
+    {
+      "path": "first_closer.go",
+      "source": "/* outer /* inner */\npackage p\nvar after = 1\n",
+      "language": "go",
+      "fenced_code": [
+        "```go\npackage p\nvar after = 1\n```\n"
+      ],
+      "prose": [
+        "outer /* inner"
+      ],
+      "fragments": [],
+      "source_blocks": 2
+    }
+  ],
+  "invalid": [
+    {
+      "path": "broken.rs",
+      "source": "/* unclosed"
+    },
+    {
+      "path": "broken.rs",
+      "source": "/* nested /* */"
+    },
+    {
+      "path": "broken.rs",
+      "source": "let s = r##\"wrong\"#;"
+    },
+    {
+      "path": "broken.ml",
+      "source": "(* unclosed"
+    },
+    {
+      "path": "broken.ml",
+      "source": "(* nested (* *)"
+    },
+    {
+      "path": "broken.ml",
+      "source": "let s = \"unterminated"
+    },
+    {
+      "path": "broken.ml",
+      "source": "let s = {tag|wrong|other}"
+    },
+    {
+      "path": "broken.js",
+      "source": "/* unclosed"
+    },
+    {
+      "path": "broken.js",
+      "source": "const x = 'unclosed"
+    },
+    {
+      "path": "broken.js",
+      "source": "const x = `unclosed"
+    },
+    {
+      "path": "broken.js",
+      "source": "const x = /[unclosed/;"
+    },
+    {
+      "path": "broken.js",
+      "source": "const x = ;"
+    },
+    {
+      "path": "broken.ts",
+      "source": "/* unclosed"
+    },
+    {
+      "path": "broken.ts",
+      "source": "const x: string = \"unclosed"
+    },
+    {
+      "path": "broken.ts",
+      "source": "const x: = 1;"
+    },
+    {
+      "path": "broken.go",
+      "source": "package example\n/* unclosed"
+    },
+    {
+      "path": "broken.go",
+      "source": "package example\nvar x = `unclosed"
+    },
+    {
+      "path": "broken.go",
+      "source": "package example\nvar x ="
+    },
+    {
+      "path": "broken.py",
+      "source": "x = '''unclosed"
+    },
+    {
+      "path": "broken.py",
+      "source": "x = \"unclosed"
+    },
+    {
+      "path": "broken.py",
+      "source": "def broken("
+    }
+  ]
+}

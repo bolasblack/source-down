@@ -252,6 +252,7 @@ impl Session {
         self.external.cleanup_result()
     }
 
+    // {% spec "plg-002" %}
     fn prepare_run(
         &mut self,
         paths: &[PathBuf],
@@ -559,7 +560,6 @@ impl PreparedRun<'_> {
 }
 
 // {% spec "mod-005" %}
-// {% spec "plg-002" %}
 // {% spec "cli-006" %}
 pub fn run(
     root: &Path,
@@ -590,4 +590,134 @@ pub fn run(
     }
     eprintln!("source-down: published {} pages", outcome.pages.len());
     Ok(())
+}
+
+// Session tests observe the registered handler while retaining real preparation and publication.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{cell::RefCell, fs, rc::Rc};
+
+    #[test]
+    fn spec_plg_003_plg_010_builtin_include_receives_one_batch_for_three_files() {
+        struct ObservedBuiltin {
+            inner: Box<dyn Plugin>,
+            batches: Rc<RefCell<Vec<PluginBatch>>>,
+        }
+        impl Plugin for ObservedBuiltin {
+            fn run(
+                &mut self,
+                batch: &PluginBatch,
+                sources: &mut SourceStore,
+            ) -> Result<PluginOutput> {
+                self.batches.borrow_mut().push(batch.clone());
+                self.inner.run(batch, sources)
+            }
+        }
+
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().canonicalize().unwrap();
+        fs::create_dir(root.join("src")).unwrap();
+        for (path, text) in [
+            (
+                "src/a.rs",
+                "// {% include \"one.txt\" %}\n// {% include \"two.txt\" %}\n",
+            ),
+            ("src/empty.rs", ""),
+            (
+                "src/example.rs",
+                "// {% include \"three.txt\" %}\n// {% include \"four.txt\" %}\n",
+            ),
+            ("one.txt", "First material.\n"),
+            ("two.txt", "Second material.\n"),
+            ("three.txt", "Third material.\n"),
+            ("four.txt", "Fourth material.\n"),
+        ] {
+            fs::write(root.join(path), text).unwrap();
+        }
+
+        let mut session =
+            Session::new(&root, None, None, Arc::new(AtomicBool::new(false))).unwrap();
+        let Some(Handler::Builtin(inner)) = session.registry.remove("builtin:include") else {
+            panic!("include must use the registered built-in handler");
+        };
+        let batches = Rc::new(RefCell::new(Vec::new()));
+        session.registry.insert(
+            "builtin:include".into(),
+            Handler::Builtin(Box::new(ObservedBuiltin {
+                inner,
+                batches: batches.clone(),
+            })),
+        );
+
+        let mut prepared = session
+            .prepare(&[
+                "src/example.rs".into(),
+                "src/empty.rs".into(),
+                "src/a.rs".into(),
+            ])
+            .unwrap();
+        prepared.close_session().unwrap();
+        let outcome = prepared.publish().unwrap();
+        assert!(!outcome.check_failed);
+        assert!(outcome.diagnostics.is_empty());
+
+        let batches = batches.borrow();
+        let [batch] = batches.as_slice() else {
+            panic!("expected exactly one built-in batch, got {batches:?}");
+        };
+        assert_eq!(batch.batch_id, "r1");
+        assert_eq!(outcome.batch_id, batch.batch_id);
+        assert_eq!(
+            batch.input_files,
+            ["src/a.rs", "src/empty.rs", "src/example.rs"]
+        );
+        assert_eq!(batch.requests.len(), 4);
+        for (request, (id, path, start_byte, end_byte, line, material)) in
+            batch.requests.iter().zip([
+                ("d1", "src/a.rs", 3, 26, 1, "one.txt"),
+                ("d2", "src/a.rs", 30, 53, 2, "two.txt"),
+                ("d3", "src/example.rs", 3, 28, 1, "three.txt"),
+                ("d4", "src/example.rs", 32, 56, 2, "four.txt"),
+            ])
+        {
+            assert_eq!(request.id, id);
+            assert_eq!(request.directive, "include");
+            assert_eq!(request.arguments.positional, [serde_json::json!(material)]);
+            assert!(request.arguments.named.is_empty());
+            assert_eq!(
+                request.source,
+                SourceSpan {
+                    path: path.into(),
+                    start_byte,
+                    end_byte,
+                    start_line: line,
+                    end_line: line,
+                }
+            );
+        }
+
+        let pages = root.join(".source-down/pages");
+        assert_eq!(
+            outcome.pages,
+            ["src/a.rs.md", "src/empty.rs.md", "src/example.rs.md"].map(|path| pages.join(path))
+        );
+        for (path, first, second) in [
+            ("src/a.rs.md", "First material.\n", "Second material.\n"),
+            (
+                "src/example.rs.md",
+                "Third material.\n",
+                "Fourth material.\n",
+            ),
+        ] {
+            let page = fs::read_to_string(pages.join(path)).unwrap();
+            assert!(page.find(first).unwrap() < page.find(second).unwrap());
+            assert_eq!(page.matches(" material.\n").count(), 2);
+            assert_eq!(page.matches("**Call site**").count(), 2);
+        }
+        assert_eq!(
+            fs::read(pages.join("src/empty.rs.md")).unwrap(),
+            b"# `src/empty.rs`\n\n"
+        );
+    }
 }

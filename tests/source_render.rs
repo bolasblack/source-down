@@ -7,6 +7,198 @@ use std::path::Path;
 use std::sync::Arc;
 
 #[test]
+fn spec_ren_012_published_matrix_keeps_source_paragraphs_and_code_links_visible() {
+    use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
+    let matrix: serde_json::Value = serde_json::from_str(include_str!(
+        "../tests-e2e/fixtures/render/source_matrix.json"
+    ))
+    .unwrap();
+    let cases = matrix["valid"].as_array().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    for case in cases {
+        std::fs::write(
+            root.path().join(case["path"].as_str().unwrap()),
+            case["source"].as_str().unwrap(),
+        )
+        .unwrap();
+    }
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_source-down"))
+        .args(["render", ".", "--root"])
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(result.stdout.is_empty());
+    for case in cases {
+        let path = case["path"].as_str().unwrap();
+        let page =
+            std::fs::read_to_string(root.path().join(format!(".source-down/pages/{path}.md")))
+                .unwrap();
+        let events: Vec<_> = Parser::new(&page).collect();
+        let mut sources = 0;
+        for (index, event) in events.iter().enumerate() {
+            if !matches!(event, Event::Start(Tag::BlockQuote(_))) {
+                continue;
+            }
+            let end = events[index + 1..]
+                .iter()
+                .position(|event| matches!(event, Event::End(TagEnd::BlockQuote(_))))
+                .unwrap()
+                + index
+                + 1;
+            let block = &events[index + 1..end];
+            assert_eq!(
+                block
+                    .iter()
+                    .filter(|event| matches!(event, Event::Start(Tag::Paragraph)))
+                    .count(),
+                1,
+                "{path}"
+            );
+            assert!(
+                block
+                    .iter()
+                    .any(|event| matches!(event, Event::Text(text) if text.as_ref() == "Source")),
+                "{path}"
+            );
+            assert!(
+                !block.iter().any(|event| matches!(event, Event::SoftBreak)),
+                "{path}"
+            );
+            let links: Vec<_> = block
+                .windows(3)
+                .filter_map(|window| match window {
+                    [
+                        Event::Start(Tag::Link { dest_url, .. }),
+                        Event::Code(label),
+                        Event::End(TagEnd::Link),
+                    ] => Some((label.as_ref(), dest_url.as_ref())),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(links.len(), 1, "{path}");
+            let (label, url) = links[0];
+            let lines = label
+                .strip_prefix(&format!("{path}:L"))
+                .expect("complete source path in code span");
+            let (first, _) = lines.split_once("-L").unwrap();
+            assert_eq!(url, format!("../../{path}#L{first}"));
+            sources += 1;
+        }
+        assert_eq!(sources, case["source_blocks"].as_u64().unwrap(), "{path}");
+        let code_blocks = events.iter().filter(|event| matches!(event,
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(language))) if language.as_ref() == case["language"].as_str().unwrap())).count();
+        assert_eq!(
+            code_blocks,
+            case["fenced_code"].as_array().unwrap().len(),
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn spec_ren_012_published_expansion_sources_are_independent_paragraphs() {
+    use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+    let root = tempfile::tempdir().unwrap();
+    for (path, bytes) in [
+        (
+            "a.rs",
+            "// before\r\n// {% note \"first\" %}\r\n// \r\n// {% note \"second\" %}\r\n// after",
+        ),
+        ("material [v1]#`.md", "First\n"),
+        ("b.md", "Second\n"),
+        (
+            "source-down.toml",
+            "config_version=1\n[plugins.notes]\ncommand=['python','plugin.py']\ndirectives=['note']\n",
+        ),
+        (
+            "plugin.py",
+            include_str!("../tests-e2e/fixtures/render/fragment_outputs.py"),
+        ),
+        (
+            "e2e_wire.py",
+            include_str!("../tests-e2e/fixtures/plugin_wire.py"),
+        ),
+    ] {
+        std::fs::write(root.path().join(path), bytes).unwrap();
+    }
+    let reply = serde_json::json!({
+        "sources": [
+            {"path":"material [v1]#`.md","start_byte":0,"end_byte":6,"start_line":1,"end_line":1},
+            {"path":"b.md","start_byte":0,"end_byte":7,"start_line":1,"end_line":1},
+        ],
+        "append": [], "reports": {},
+    });
+    std::fs::write(root.path().join("reply.json"), reply.to_string()).unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_source-down"))
+        .args(["render", "a.rs", "--root"])
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(result.stdout.is_empty());
+    let page = std::fs::read_to_string(root.path().join(".source-down/pages/a.rs.md")).unwrap();
+    let events: Vec<_> = Parser::new(&page).collect();
+    let mut paragraph_counts = Vec::new();
+    let mut links = Vec::new();
+    for (index, event) in events.iter().enumerate() {
+        if !matches!(event, Event::Start(Tag::BlockQuote(_))) {
+            continue;
+        }
+        let end = events[index + 1..]
+            .iter()
+            .position(|event| matches!(event, Event::End(TagEnd::BlockQuote(_))))
+            .unwrap()
+            + index
+            + 1;
+        let block = &events[index + 1..end];
+        paragraph_counts.push(
+            block
+                .iter()
+                .filter(|event| matches!(event, Event::Start(Tag::Paragraph)))
+                .count(),
+        );
+        assert!(!block.iter().any(|event| matches!(event, Event::SoftBreak)));
+        links.extend(block.windows(3).filter_map(|window| match window {
+            [
+                Event::Start(Tag::Link { dest_url, .. }),
+                Event::Code(label),
+                Event::End(TagEnd::Link),
+            ] => Some((label.as_ref(), dest_url.as_ref())),
+            _ => None,
+        }));
+    }
+    assert_eq!(paragraph_counts, [1, 3, 3, 1]);
+    assert_eq!(
+        links,
+        [
+            ("a.rs:L1-L5", "../../a.rs#L1"),
+            ("a.rs:L2-L2", "../../a.rs#L2"),
+            (
+                "material [v1]#`.md:L1-L1",
+                "../../material%20%5Bv1%5D%23%60.md#L1"
+            ),
+            ("b.md:L1-L1", "../../b.md#L1"),
+            ("a.rs:L4-L4", "../../a.rs#L4"),
+            (
+                "material [v1]#`.md:L1-L1",
+                "../../material%20%5Bv1%5D%23%60.md#L1"
+            ),
+            ("b.md:L1-L1", "../../b.md#L1"),
+            ("a.rs:L1-L5", "../../a.rs#L1"),
+        ]
+    );
+}
+
+#[test]
 fn spec_ren_001_006_javascript_extracts_comments_without_changing_literals() {
     let input = concat!(
         "#!/usr/bin/env node --label '\n",

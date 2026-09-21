@@ -56,6 +56,9 @@ pub fn appendix(
     if fragments.is_empty() {
         return Ok(());
     }
+    while !output.ends_with("\n\n") {
+        output.push('\n');
+    }
     output.push_str("# Appendix\n\n");
     for (plugin, fragments) in fragments {
         write!(output, "> **Plugin**: {}", code_span(plugin)).expect("writing a String");

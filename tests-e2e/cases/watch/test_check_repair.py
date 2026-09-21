@@ -4,7 +4,7 @@ from support import E2ECase
 
 
 class CheckRepair(E2ECase):
-    specs = ("SPEC-CLI-010", "SPEC-PLG-013", "SPEC-CLI-004", "SPEC-BLT-006")
+    specs = ("SPEC-CLI-010", "SPEC-PLG-013", "SPEC-CLI-004", "SPEC-BLT-006", "SPEC-CLI-005", "SPEC-CLI-011")
 
     def test_scenario(self):
         """材料缺失时更新报告并保护旧发布，补齐材料后复用插件恢复"""
@@ -16,7 +16,8 @@ class CheckRepair(E2ECase):
             "source-down.toml": 'config_version=1\n[plugins.report]\ncommand=["python","plugin.py"]\n',
         }) as project:
             with project.sourceDown.watch(inputs=["docs"]) as watch:
-                watch.waitForDiagnostics(contains=["pages; watching"])
+                initial = watch.waitForDiagnostics(contains=["pages; watching"])
+                self.assertIn(b"source-down: report .source-down/reports/report/status.md\n", initial.stderr)
                 page = ".source-down/pages/docs/index.md.md"
                 index = ".source-down/search/index.json"
                 report = ".source-down/reports/report/status.md"
@@ -24,8 +25,10 @@ class CheckRepair(E2ECase):
                 oldIndex = project.readBytes(index)
                 oldReport = project.readBytes(report)
 
+                checkpoint = watch.checkpoint()
                 (project.root / "material.md").unlink()
-                watch.waitForDiagnostics(contains=["checks failed; watching"])
+                failed = watch.waitForDiagnostics(contains=["checks failed; watching"], since=checkpoint)
+                self.assertIn(b"source-down: report .source-down/reports/report/status.md\n", failed.stderr)
                 self.assertFileContent(project, page, oldPage)
                 self.assertFileContent(project, index, oldIndex)
                 self.assertNotEqual(project.readBytes(report), oldReport)

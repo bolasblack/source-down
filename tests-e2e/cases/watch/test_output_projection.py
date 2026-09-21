@@ -28,6 +28,17 @@ class OutputProjection(E2ECase):
                 self.assertRunResult(stale, exitCode=1)
                 self.assertIn(b"stale search index", stale.raw.stderr)
 
+                # Every generated subtree and its temporary files share the exclusion.
+                # Observe each edit separately so a report-triggered round cannot hide.
+                for path in ["review/nested/reports/observe/manual.md",
+                             "review/nested/search/index.json",
+                             "review/nested/pages/docs/.source-down-manual.tmp"]:
+                    with self.subTest(output=path):
+                        project.writeFiles({path: "manually edited output\n"})
+                        time.sleep(1.2)
+                        self.assertFileContent(project, ".source-down/observer.events", events)
+                        self.assertFileContent(project, path, b"manually edited output\n")
+
                 project.writeInPlace("review/authored.txt", "A real new directory member\n")
                 watch.waitForOutputState(contains={
                     "review/nested/pages/docs/index.md.md": "Needle projection",

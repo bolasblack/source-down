@@ -66,7 +66,14 @@ nested Unicode paths, hard-link protection, process-tree cleanup, close deadline
 pending writes and cancellation under blocked stdout. The preflight
 `test --review` publishes reading from the instrumented test execution. Extracted
 artifacts and relocated source still require their own acceptance evidence.
-The Linux GNU verification job additionally owns coverage and benchmark gates.
+The reusable [verification workflow](../.github/workflows/verify.yml) owns Linux
+lint, coverage/E2E reading, project review and exclusive benchmark gates as separate
+steps. Its source identity job resolves one commit for the verification and
+benchmark jobs, which run concurrently on separate hosted machines. Both must
+pass before release builds can begin. Branch tests and release preflight call this
+same workflow. The release
+caller supplies a tag, which must pass identity checks before the source commit
+is returned to artifact jobs; branch CI verifies its triggering commit.
 Cross compilation proves compilation only; native runner success is required before
 the draft job runs. There are seven archives and one final `SHA256SUMS` covering
 exactly those seven archives.
@@ -79,6 +86,7 @@ Action pins were resolved from these upstream release tags with the packaged act
 | `actions/upload-artifact` | [v7.0.1](https://github.com/actions/upload-artifact/releases/tag/v7.0.1) | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
 | `actions/download-artifact` | [v8.0.1](https://github.com/actions/download-artifact/releases/tag/v8.0.1) | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` |
 | `jdx/mise-action` | [v4.3.0](https://github.com/jdx/mise-action/releases/tag/v4.3.0) | `c2a87611a18de5b3828c5652fe268e992400cb5c` |
+| `Swatinem/rust-cache` | [v2.9.2](https://github.com/Swatinem/rust-cache/releases/tag/v2.9.2) | `6323deb102c322ba6fcbdcafc7e3dddab59af2b6` |
 
 Repository identity: [bolasblack/source-down](https://github.com/bolasblack/source-down), confirmed by the owner. `Cargo.toml` owns the version; only the `source-down` package entry in `Cargo.lock` follows a bump. Release notes live in `docs/releases/<tag>.md`.
 

@@ -9,7 +9,7 @@ class NativeWatch(E2ECase):
         """默认明确使用 native，原子替换及新目录中的文件均自动发布"""
         with self.project({"docs/index.md": "Native before\n"}) as project:
             with project.sourceDown.watch(inputs=["docs"]) as watch:
-                watch.waitForDiagnostics(contains=["published"])
+                watch.waitForPublishedPages(1)
                 self.assertWatchDiagnostics(watch, contains=["watch: backend native"])
 
                 project.atomicReplace(

@@ -69,7 +69,10 @@ def build_mutant(context, owner, original, needle, replacement):
         (checkout / owner).write_bytes(modified)
         env = environment(host_target())
         env.update(CARGO_INCREMENTAL="0", CARGO_PROFILE_DEV_DEBUG="0")
+        # This private target is discarded after one scenario; dependency
+        # optimization would add compilation cost without reusable artifacts.
         command = context.command(["cargo", "build", "--locked", "--bin", "source-down",
+                                   "--config", 'profile.dev.package."*".opt-level=0',
                                    "--manifest-path", checkout / "Cargo.toml", "--target-dir", target],
                                   cwd=checkout, env=env, timeout=600)
         if command.returncode:

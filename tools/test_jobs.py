@@ -6,9 +6,33 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import sys
 import time
 
 from process_scope import ProcessScope
+
+
+def annotate(level, message):
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        # The Actions runner truncates annotations at 4 KiB. Preserve the owner
+        # and final exception, where nested unittest diagnostics keep the cause.
+        encoded = message.encode("utf-8")
+        if len(encoded) > 3500:
+            message = (encoded[:300].decode("utf-8", errors="replace")
+                       + "\n[... full diagnostic in logs and artifacts ...]\n"
+                       + encoded[-3000:].decode("utf-8", errors="replace"))
+        annotation = message
+        annotation = annotation.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::{level}::{annotation}", flush=True)
+
+
+def print_failure(message):
+    """Keep the full diagnostic in logs and expose it in CI's check annotations."""
+    # A diagnostic can itself contain text beginning with a workflow command.
+    github = os.environ.get("GITHUB_ACTIONS") == "true"
+    print("\n".join("  " + line for line in message.splitlines()) if github else message,
+          file=sys.stderr, flush=True)
+    annotate("error", message)
 
 
 def positive_jobs(value):

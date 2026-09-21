@@ -20,7 +20,7 @@ class EditedPageNotAdopted(E2ECase):
             authorBytes = project.readBytes(obsoletePage)
 
             with project.sourceDown.watch(inputs=["docs", "extra.md"]) as watch:
-                watch.waitForDiagnostics(contains=["watch round 1: published"])
+                watch.waitForPublishedPages(2)
                 self.assertFileContent(project, obsoletePage, authorBytes)
                 self.assertWatchDiagnostics(watch, contains=["not adopting"])
                 self.assertRunResult(project.sourceDown.search("Keep"), exitCode=0)

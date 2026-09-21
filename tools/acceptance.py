@@ -12,7 +12,7 @@ import sys
 import traceback
 import unittest
 import uuid
-from test_jobs import Job, add_jobs_argument, run_jobs
+from test_jobs import Job, add_jobs_argument, print_failure, run_jobs
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -193,6 +193,8 @@ class AcceptanceRun:
         for case in assigned:
             self.completed += 1
             print(f"[E2E {self.completed}] {case['id']}: {case['status']} ({job.record['seconds']:.2f}s module)", flush=True)
+            if case["status"] in ("failed", "error") and case.get("log"):
+                print_failure(f"{case['id']}\n" + (self.run / case["log"]).read_text(encoding="utf-8"))
         return report["interrupted"]
 
     def finish(self, interrupted=False):
@@ -220,6 +222,8 @@ class AcceptanceRun:
         report["full_pass"] = report["scope"] == "complete" and passed and not self.review
         report["tests_ended_at"] = report["ended_at"] = now()
         report["documentation"] = {"status": "pending" if self.review else "not_requested"}
+        for error in report["errors"]:
+            print_failure(f"E2E error: {error}")
         save(report, run)
         if self.review:
             try:

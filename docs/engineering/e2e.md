@@ -190,6 +190,15 @@ exit-plus-stdout checks remain distinct, as do final-window log comparisons and
 whole-window native event capture. Tests observe product process reaping before
 context cleanup. Native shims keep their real build paths, system calls and pause
 handshakes; helpers never repair a fault or retry a business operation implicitly.
+Publication waits assert the expected page count and resulting bytes or queries.
+The bare word `published` also occurs in rejection diagnostics and is not a
+publication condition.
+They do not require round 1 to publish: a correctly discarded candidate can be
+followed by a successful later round within the same original timeout.
+Plugin invocation counts include explicitly reported discarded candidates. A
+no-redundant-work scenario still requires the intended publications and a complete
+quiet window with unchanged events and outputs; it does not mistake a discarded
+attempt for an additional successful publication.
 
 Watch waits return frozen facts from the successful attempt:
 
@@ -270,6 +279,12 @@ the coordinator alone owns discovery, final outcomes and reading publication.
 `--jobs 1` provides ordered execution for diagnosis. Completed cases and durations
 are printed during execution, including through Cargo's bridge. Recorded durations
 may prioritize longer modules; these hints never select cases or determine outcomes.
+Failed cases print their retained traceback to the console as well as keeping it
+in the run artifacts, so CI logs identify the failed observation directly.
+GitHub Actions also receives escaped error annotations containing those failures;
+multiline diagnostics remain data and cannot become workflow commands.
+Long annotations retain their identifying prefix and exception tail within the
+runner's size limit; the full diagnostic remains in logs and artifacts.
 Ordinary failures do not prevent independent cases from running. A filtered run is
 always labeled partial, even if every selected case passes.
 
@@ -292,8 +307,14 @@ logs. Preserve the inherited build and coverage environment, including
 `LLVM_PROFILE_FILE`, `SD_COVERAGE_ROOT` and `SD_COVERAGE_DATA`; report only these
 relevant facts rather than the complete environment.
 
-Commands have bounded waits and clean up their process scopes on timeout or
-interruption. An interrupted run stops dispatching, interrupts every active worker,
+Commands have bounded waits and clean up their process scopes on normal completion,
+timeout or interruption. On Windows, cleanup captures job members' process handles
+before termination, waits for their signaled exit state and checks that the job is
+empty before temporary projects are removed. Closing a kill-on-close handle or
+observing zero active processes alone does not establish completed resource teardown.
+Native deadline fixtures must allow their interpreter to start and still prove the
+intended blocked phase and process cleanup, rather than assuming startup finishes
+within a subsecond timeout. An interrupted run stops dispatching, interrupts every active worker,
 waits for their owned commands to be cleaned up, saves acquired results, marks
 active cases as interrupted/error and the remaining cases `not_run`, and exits 130.
 A missing or invalid worker result is an execution error, never a passing case.
@@ -334,6 +355,9 @@ retain `*_test.py`, so they do not rediscover `test_*.py` scenarios.
 `mise run test` builds its artifacts once, then schedules native Rust tests, Python
 tool tests and readable E2E modules under one worker budget. Python tool tests with
 class or module fixtures execute together; independent methods have separate workers.
+Dispatch alternates between the collections so later E2E modules can start without
+waiting for the complete Python and native queues. Relative order within each
+collection and the shared concurrency bound remain intact.
 Cargo's discovered
 test artifacts and unittest discovery remain the inventories; no hand-maintained
 test list substitutes for them. Rust doctests are included. Direct `cargo test`
@@ -343,6 +367,18 @@ default nested E2E concurrency to one; explicit concurrency tests may request mo
 `mise run test -- --review` also publishes the E2E reading from this execution,
 without repeating the scenarios. The test task retains
 separate 90% line-coverage gates for core, Rust spec plugin and Python project plugin.
+Development/test builds may optimize third-party dependencies while keeping the
+workspace's production code unoptimized with debug assertions and overflow checks.
+Concurrent coverage sampling uses LLVM's locked profile pools, separated by binary
+signature and cleared between runs. External-entry tests must demonstrate that
+every child contributes and that a prior run cannot fill a current coverage gap.
+Branch CI and release preflight call the same reusable Linux verification workflow,
+including lint, coverage/E2E reading, project review and exclusive benchmarks.
+After resolving the source commit, benchmarks run on a separate hosted machine
+in parallel with the other gates. Both jobs must pass; measurements never share
+their machine with the test pool.
+Only release callers request tag identity validation; normal branch checks verify
+the triggering commit without preparing a release.
 Line coverage is distinct from spec-plugin reference coverage. `lint`, full source
 `review`, readable `acceptance`, and native `release` must pass. Release verification
 uses the extracted CLI and relocates/rebuilds the source package on the executable

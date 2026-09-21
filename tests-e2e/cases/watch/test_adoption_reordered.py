@@ -18,7 +18,7 @@ class ReorderedPageAdoption(E2ECase):
             (project.root / "docs/obsolete.md").unlink()
 
             with project.sourceDown.watch(inputs=["extra.md", "docs", "docs"]) as watch:
-                watch.waitForDiagnostics(contains=["watch round 1: published"])
+                watch.waitForPublishedPages(2)
                 self.assertPathAbsent(project, obsoletePage)
                 self.assertRunResult(project.sourceDown.search("Keep"), exitCode=0)
                 watch.interrupt()

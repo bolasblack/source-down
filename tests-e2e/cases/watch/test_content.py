@@ -18,22 +18,29 @@ class ContentChanges(E2ECase):
             with project.sourceDown.watch(inputs=["docs"]) as watch:
                 index = ".source-down/search/index.json"
                 watch.waitForOutputState(filesPresent=[index])
-                watch.waitForDiagnostics(contains=["watching"])
+                watch.waitForPublishedPages(1)
                 page = ".source-down/pages/docs/index.md.md"
                 oldIndex = project.readBytes(index)
                 source = project.root / "docs/index.md"
                 original = source.stat()
 
+                changed = watch.checkpoint()
                 project.writePreservingTimes("docs/index.md", "needle after!\n")
                 self.assertEqual(source.stat().st_size, original.st_size)
                 self.assertEqual(source.stat().st_mtime_ns, original.st_mtime_ns)
                 watch.waitForOutputState(contains={page: "needle after!\n"})
                 watch.waitForOutputState(changed={index: oldIndex})
+                watch.waitForPublishedPages(1, since=changed)
 
                 found = project.sourceDown.search("after")
                 self.assertRunResult(found, exitCode=0)
                 self.assertIn(b"after!", found.raw.stdout)
-                expectedEvents = b"initialize\nrun\nrun\n"
+                diagnostics = watch.stderr
+                self.assertEqual(diagnostics.count(b"published 1 pages"), 2, diagnostics)
+                # A candidate discarded before publication still ran its batch.
+                # Only the two intended publications and reported discards may run.
+                attempts = 2 + diagnostics.count(b"candidate not published")
+                expectedEvents = b"initialize\n" + b"run\n" * attempts
                 self.assertFileContent(project, ".source-down/observer.events", expectedEvents)
                 stableIndex = project.readBytes(index)
                 time.sleep(1.1)

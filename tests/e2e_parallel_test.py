@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import time
+from unittest.mock import patch
 
 from e2e_tools_test import E2EToolsFixture, ROOT
 
@@ -63,18 +64,26 @@ class Concurrent(E2ECase):
         self.assertIn("test_a_overlap", result.stdout)
 
     def test_parallel_failure_and_worker_exit_cannot_hide_other_outcomes(self):
-        for number, body in enumerate(("self.fail('visible failure')", "os._exit(7)", "pass")):
+        for number, body in enumerate(("self.fail('visible failure' + 'x' * 5000 + '\\n100%\\n::error::still test data')", "os._exit(7)", "pass")):
             self.case(f"render/test_result_{number}.py", f'''import os, unittest
 class Outcome(unittest.TestCase):
     def test_scenario(self):
         {body}
 ''')
-        result = self.run_acceptance("--jobs", "2")
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}):
+            result = self.run_acceptance("--jobs", "2")
         self.assertEqual(result.returncode, 1, result.stderr)
         report, _ = self.results()
         self.assertFalse(report["full_pass"])
         self.assertEqual([case["status"] for case in report["cases"]], ["failed", "error", "passed"])
         self.assertTrue(report["errors"])
+        self.assertIn("AssertionError: visible failure", result.stderr)
+        self.assertIn("worker exited 7", result.stderr)
+        self.assertFalse(any(line.startswith("::") for line in result.stderr.splitlines()), result.stderr)
+        annotations = [line for line in result.stdout.splitlines() if line.startswith("::error::")]
+        self.assertTrue(all(len(line.encode("utf-8")) < 4096 for line in annotations), result.stdout)
+        self.assertTrue(any("100%25%0A::error::still test data" in line for line in annotations), result.stdout)
+        self.assertTrue(any("worker exited 7" in line for line in annotations), result.stdout)
 
     def test_one_worker_preserves_order_and_filtering(self):
         marker = self.root / "ordered"

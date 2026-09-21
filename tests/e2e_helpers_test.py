@@ -840,6 +840,13 @@ class Preparation(E2ECase):
         result = self.run_acceptance(*(["--review"] if review else []))
         report, run = self.results()
         logs = "\n".join((run / c["log"]).read_text() for c in report["cases"] if c.get("log"))
+        unexpected = {c["id"] for c in report["cases"]
+                      if c["status"] != expected.get(Path(c["source"]).stem.removeprefix("test_"))}
+        cleanup = [{key: command.get(key) for key in ("case_id", "argv", "pid", "exit_code", "cleanup_complete",
+                    "windows_job_pids", "windows_waited_pids", "error")}
+                   for command in report["commands"] if command["case_id"] in unexpected]
+        if cleanup:
+            logs += "\nCommand cleanup evidence: " + json.dumps(cleanup)
         self.assertEqual(result.returncode, int(any(s != "passed" for s in expected.values())), logs)
         self.assertEqual({Path(c["source"]).stem.removeprefix("test_"): c["status"] for c in report["cases"]}, expected, logs)
         if review:

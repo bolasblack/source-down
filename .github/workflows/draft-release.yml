@@ -24,31 +24,9 @@ jobs:
   verify:
     permissions:
       contents: read
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    outputs:
-      commit: ${{ steps.identity.outputs.commit }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
-        with:
-          version: "2026.6.2"
-          install: "true"
-          # mise's cache omits the rustup toolchains behind its Rust links.
-          cache: "false"
-      - name: Verify release identity
-        id: identity
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: |-
-          python3 .github/release/check.py --tagged --tag-prefix v --version-file Cargo.toml "$TAG"
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Full development acceptance
-        run: mise run lint && mise run test -- --review && mise run review && mise run benchmark
+    uses: ./.github/workflows/verify.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
 
   build:
     needs: verify

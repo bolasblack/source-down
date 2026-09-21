@@ -15,12 +15,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
   test:
     name: test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2022]
+        os: [macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -40,27 +42,25 @@ jobs:
           install: "true"
           # mise's cache omits the rustup toolchains behind its Rust links.
           cache: "false"
+      - name: Restore compiled dependencies
+        id: cargo-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          shared-key: native-test-${{ hashFiles('.mise.toml', 'tools/build.py', 'tools/cc', 'tools/ar') }}
+          cache-bin: "false"
+          cache-on-failure: "true"
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Report dependency cache
+        run: echo '::notice::Cargo dependency cache hit = ${{ steps.cargo-cache.outputs.cache-hit }}'
       - name: Formatting and Clippy
         run: |
           mkdir -p .source-down/test-logs
           cargo fmt --all -- --check 2>&1 | tee .source-down/test-logs/formatting.log
           python tools/build.py -- cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee .source-down/test-logs/clippy.log
-      - name: All tests and coverage gates
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p .source-down/test-logs
-          mise run test 2>&1 | tee .source-down/test-logs/tests.log
       - name: All native tests
-        if: runner.os != 'Linux'
         run: |
           mkdir -p .source-down/test-logs
           python tools/build.py -- python tools/test.py --no-coverage 2>&1 | tee .source-down/test-logs/tests.log
-      - name: Documentation, self-review and benchmark gates
-        if: runner.os == 'Linux'
-        run: |
-          python tools/check_docs.py 2>&1 | tee .source-down/test-logs/documentation.log
-          mise run review 2>&1 | tee .source-down/test-logs/review.log
-          mise run benchmark 2>&1 | tee .source-down/test-logs/benchmark.log
       - name: Retain test evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -9,7 +9,7 @@ class PublicationRepair(E2ECase):
         """发布目标被目录占用时保留旧产物，修复该生成树内路径后自动发布并更新搜索"""
         with self.project({"docs/keep.md": "Keep reading\n"}) as project:
             with project.sourceDown.watch(inputs=["docs"]) as watch:
-                watch.waitForDiagnostics(contains=["watch round 1: published"])
+                watch.waitForPublishedPages(1)
                 oldIndex = project.readBytes(".source-down/search/index.json")
                 oldPage = project.readBytes(".source-down/pages/docs/keep.md.md")
                 blocked = project.root / ".source-down/pages/docs/added.md.md"

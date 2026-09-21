@@ -95,6 +95,10 @@ def measure(output, jobs, *, review=False):
         key, value = assignment.split("=", 1)
         env[key] = value
 
+    # LLVM locks and merges counters in each binary signature's pool. A PID in
+    # this path would turn every subprocess into another full raw profile.
+    env["LLVM_PROFILE_FILE"] = str(ROOT / "target/coverage" / f"source-down-%{min(jobs, 9)}m.profraw")
+
     # The profile directory and instrumented Cargo cache have one owner. Clean
     # the current workspace's profiles before building, retaining dependency caches.
     run(["cargo", "llvm-cov", "clean", "--workspace"], env)

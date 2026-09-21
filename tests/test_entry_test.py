@@ -26,7 +26,7 @@ class TestEntryTest(unittest.TestCase):
 #[test] fn native_overlaps_other_collections() {
     std::fs::write("rust.ready", "ready").unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !std::path::Path::new("python.ready").exists() || !std::path::Path::new("e2e.ready").exists() {
+    while !std::path::Path::new("python.ready").exists() || !std::path::Path::new("e2e.ready").exists() || !std::path::Path::new("second_e2e.ready").exists() {
         assert!(std::time::Instant::now() < deadline, "collections ran sequentially");
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
@@ -44,8 +44,10 @@ class Shared(unittest.TestCase):
         self.assertEqual(type(self).count, 1)
 ''')
             for filename, own, others, base in (
-                ("tests/overlap_test.py", "python", ("rust", "e2e"), "unittest.TestCase"),
-                ("tests-e2e/cases/test_overlap.py", "e2e", ("rust", "python"), "E2ECase"),
+                ("tests/overlap_test.py", "python", ("rust", "e2e", "second_e2e"), "unittest.TestCase"),
+                ("tests/queue_test.py", "queued_python", ("second_e2e",), "unittest.TestCase"),
+                ("tests-e2e/cases/test_overlap.py", "e2e", ("rust", "python", "second_e2e"), "E2ECase"),
+                ("tests-e2e/cases/test_second.py", "second_e2e", ("rust", "python"), "E2ECase"),
             ):
                 (root / filename).write_text(f'''import time, unittest
 from pathlib import Path
@@ -59,14 +61,14 @@ class Overlap({base}):
             self.assertLess(time.monotonic(), deadline, "collections ran sequentially")
             time.sleep(0.01)
 ''')
-            env = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"), SD_TEST_JOBS="3")
+            env = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"), SD_TEST_JOBS="4")
             suffix = ".exe" if os.name == "nt" else ""
             supplied = root / "target/debug" / f"source-down{suffix}"
             plugin = root / "target/debug/examples" / f"spec-plugin{suffix}"
             generated = subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=root, env=env,
                                        capture_output=True, timeout=30, text=True, encoding="utf-8")
             self.assertEqual(generated.returncode, 0, generated.stderr)
-            command = [sys.executable, str(root / "tools/test.py"), "--no-coverage", "--jobs", "3"]
+            command = [sys.executable, str(root / "tools/test.py"), "--no-coverage", "--jobs", "4"]
             result = subprocess.run(command, cwd=root, env=env, capture_output=True, timeout=60, text=True, encoding="utf-8")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             reports = list((root / ".source-down/test-runs").glob("*/results.json"))
@@ -78,7 +80,7 @@ class Overlap({base}):
             self.assertTrue(any("overlap_test.py" in name for name in names), names)
             acceptance = json.loads(Path(report["e2e_results"]).read_bytes())
             self.assertTrue(acceptance["full_pass"])
-            self.assertEqual(len(acceptance["cases"]), 1)
+            self.assertEqual(len(acceptance["cases"]), 2)
             self.assertEqual(report["status"], "passed")
             (root / "tests/portability_test.py").write_text('import os, unittest\nfrom pathlib import Path\n'
                 'class Artifact(unittest.TestCase):\n    def test_exact(self):\n'

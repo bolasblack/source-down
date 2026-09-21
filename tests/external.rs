@@ -789,6 +789,9 @@ sys.exit(9)
 #[test]
 fn initialization_writes_and_explicit_close_each_have_a_deadline() {
     // SPEC-PLG-008: an early ready cannot hide blocked initialize input; closing has its own phase limit.
+    // The configured phase limit includes native interpreter startup. Match the
+    // other process fixtures so Windows reaches the blocked phase under load.
+    let timeout_ms = 3000;
     let (dir, mut plugin, mut sources, batch) = fixture_raw(
         r#"
 import os,sys,time
@@ -796,18 +799,20 @@ open('pids','w').write(str(os.getpid()))
 sys.stdout.write('{"type":"ready","protocol_version":1}\n');sys.stdout.flush()
 time.sleep(30)
 "#,
-        200,
+        timeout_ms,
     );
     let _cleanup = FixtureProcesses(dir.path().to_owned());
     plugin.config.options.insert(
         "large".into(),
         toml::Value::String("x".repeat(2 * 1024 * 1024)),
     );
+    let started = Instant::now();
     let error = plugin.run(&batch, &mut sources).unwrap_err();
     assert!(
         error.message.contains("initialize") && error.message.contains("timeout"),
         "{error}"
     );
+    assert!(started.elapsed() < Duration::from_secs(10));
     assert_processes_stopped(&fixture_pids(dir.path()));
 
     let (dir, mut plugin, mut sources, batch) = fixture(
@@ -820,14 +825,16 @@ emit({'type':'result','batch_id':b['batch_id'],'dependencies':[],
 sys.stdin.read()
 time.sleep(30)
 "#,
-        200,
+        timeout_ms,
     );
     let _cleanup = FixtureProcesses(dir.path().to_owned());
     plugin.run(&batch, &mut sources).unwrap();
+    let started = Instant::now();
     let error = plugin.close().unwrap_err();
     assert!(
         error.message.contains("closing") && error.message.contains("timeout"),
         "{error}"
     );
+    assert!(started.elapsed() < Duration::from_secs(10));
     assert_processes_stopped(&fixture_pids(dir.path()));
 }

@@ -1,0 +1,134 @@
+name: verify
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Optional release tag whose identity must be checked
+        type: string
+        default: ""
+    outputs:
+      commit:
+        description: Exact verified source commit
+        value: ${{ jobs.identity.outputs.commit }}
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+      - name: Verify source identity
+        id: identity
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$TAG" ]; then
+            python3 .github/release/check.py --tagged --tag-prefix v --version-file Cargo.toml "$TAG"
+          fi
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.identity.outputs.commit }}
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
+        with:
+          version: "2026.6.2"
+          install: "true"
+          # mise's cache omits the rustup toolchains behind its Rust links.
+          cache: "false"
+      - name: Restore compiled dependencies
+        id: cargo-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          shared-key: verify-${{ hashFiles('.mise.toml', 'tools/build.py', 'tools/cc', 'tools/ar') }}
+          cache-bin: "false"
+          cache-on-failure: "true"
+          cache-directories: .source-down/cache/zig
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Report dependency cache
+        run: echo '::notice::Cargo dependency cache hit = ${{ steps.cargo-cache.outputs.cache-hit }}'
+      - name: Lint
+        run: |
+          mkdir -p .source-down/test-logs
+          mise run lint 2>&1 | tee .source-down/test-logs/lint.log
+      - name: Tests, coverage and E2E reading
+        run: mise run test -- --review 2>&1 | tee .source-down/test-logs/tests.log
+      - name: Render project review
+        run: mise run review 2>&1 | tee .source-down/test-logs/review.log
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: verification-evidence
+          path: |
+            .source-down/test-logs/
+            .source-down/test-runs/
+            .source-down/e2e/runs/
+            .source-down/coverage/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
+  benchmark:
+    needs: identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.identity.outputs.commit }}
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
+        with:
+          version: "2026.6.2"
+          install: "true"
+          cache: "false"
+      - name: Restore compiled dependencies
+        id: cargo-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          shared-key: benchmark-${{ hashFiles('.mise.toml', 'tools/build.py', 'tools/cc', 'tools/ar') }}
+          cache-bin: "false"
+          cache-on-failure: "true"
+          cache-directories: .source-down/cache/zig
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Report dependency cache
+        run: echo '::notice::Cargo dependency cache hit = ${{ steps.cargo-cache.outputs.cache-hit }}'
+      - name: Performance benchmarks
+        run: |
+          mkdir -p .source-down/test-logs
+          mise run benchmark 2>&1 | tee .source-down/test-logs/benchmark.log
+      - name: Retain benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: benchmark-evidence
+          path: |
+            .source-down/test-logs/benchmark.log
+            .source-down/benchmark.json
+            .source-down/watch-benchmark/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7

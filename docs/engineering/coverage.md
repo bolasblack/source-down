@@ -69,6 +69,16 @@ Each scope must pass separately. Adding test source to a report cannot increase 
 [.mise.toml](../../.mise.toml) pins cargo-llvm-cov 0.6.21 and coverage.py 7.11.0. Rust uses the `llvm-tools-preview` component matching Rust 1.90.0.
 The Python tool lives in `.source-down/coverage-env`, separate from the project's runtime plugin environment.
 
+Development and test builds optimize third-party dependencies at level 2. This
+workspace, including its CLI and spec plugin, keeps optimization level 0, debug
+information, debug assertions and overflow checks. Coverage still measures the
+workspace's unoptimized production code. The first dependency build costs more;
+Cargo reuses those compiled dependencies on subsequent runs.
+Disposable mutation builds use unoptimized dependencies: their private target
+directories are discarded after one scenario, so they cannot amortize optimization
+cost. Their changed source, executable identity and real collision assertions are
+still recorded separately from the supplied main artifact.
+
 [test.py](../../tools/test.py) obtains instrumentation settings from `cargo llvm-cov show-env`, builds the CLI and spec plugin,
 and compiles Cargo's discovered test artifacts. The common scheduler runs every
 listed native Rust test, Rust doctests, discovered Python tool tests and readable
@@ -77,6 +87,14 @@ fixtures keep their shared lifecycle. Real CLI and Rust plugin subprocesses inhe
 the profile destination. The same E2E coordinator runs once against the instrumented CLI;
 direct `cargo test` reaches it through the explicit `e2e` bridge.
 Its coordinator records the exact executable hashes and inherited profile destinations.
+LLVM merges concurrent child samples into a bounded pool per binary signature,
+using its runtime's file locking. The pool has up to nine slots, capped by the
+requested worker limit. Different binaries have separate pools; every process's
+counters contribute. A new run clears old samples before any tests execute.
+CI retains compiled dependencies and Cargo downloads across runs, keyed by host,
+compiler, manifests and the pinned toolchain/build wrappers. Workspace binaries,
+test outcomes and coverage profiles are excluded from that cache. A cache hit
+never skips a test or a coverage gate; LLVM still starts from fresh samples.
 The Python tool suite uses `*_test.py`, which does not rediscover E2E `test_*.py` files.
 E2E reading is requested by `test --review` or the standalone `mise run acceptance`.
 Python tests execute the metadata plugin through its actual stdin/stdout protocol; coverage.py's subprocess patch collects those child processes.

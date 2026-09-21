@@ -1,5 +1,6 @@
 """Discover native and Python tests, then share one process budget with readable E2E."""
 from datetime import datetime, timezone
+from itertools import zip_longest
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ import unittest
 import uuid
 
 from acceptance import AcceptanceRun, flatten
-from test_jobs import Job, run_jobs
+from test_jobs import Job, annotate, print_failure, run_jobs
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -99,9 +100,9 @@ def run_suite(env, limit, *, review=False, python_prefix=None, artifact=None, sp
                                    spec_plugin=spec_plugin, review=review, env=env)
         e2e = acceptance.jobs(limit)
         report["e2e_results"] = str(acceptance.run / "results.json")
-        # Start a long E2E module and Python tests early. All processes use this pool;
-        # no wrapper reserves a slot while starting its own independent pool.
-        jobs = [*e2e[:1], *python, *native, *e2e[1:]]
+        # Keep every collection moving instead of queuing most E2E behind all
+        # tool tests. Fixture groups and each collection's order stay intact.
+        jobs = [job for batch in zip_longest(e2e, python, native) for job in batch if job is not None]
         completed = 0
 
         def complete(job):
@@ -110,9 +111,9 @@ def run_suite(env, limit, *, review=False, python_prefix=None, artifact=None, sp
             state = "passed" if job.record["exit_code"] == 0 else "failed"
             print(f"[test {completed}/{len(jobs)}] {job.name}: {state} ({job.record['seconds']:.2f}s)", flush=True)
             if state == "failed":
-                for stream in ("stdout", "stderr"):
-                    text = Path(job.record[stream]).read_text(encoding="utf-8", errors="replace")
-                    print(text, end="", flush=True)
+                print_failure(job.name + "\n" + "".join(
+                    Path(job.record[stream]).read_text(encoding="utf-8", errors="replace")
+                    for stream in ("stdout", "stderr")))
             return job.record["exit_code"] == 130
 
         for job in native + python:
@@ -140,4 +141,14 @@ def run_suite(env, limit, *, review=False, python_prefix=None, artifact=None, sp
         report["ended_at"] = datetime.now(timezone.utc).isoformat()
         (directory / "results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(f"Test results: {directory / 'results.json'}", flush=True)
+        started = datetime.fromisoformat(report["started_at"])
+        first = min((datetime.fromisoformat(job["started_at"]) for job in report["jobs"] if job.get("started_at")),
+                    default=datetime.fromisoformat(report["ended_at"]))
+        annotate("notice", "Test timings: " + json.dumps({
+            "status": report["status"], "workers": limit,
+            "build_and_discovery_seconds": round((first - started).total_seconds(), 2),
+            "total_seconds": round((datetime.fromisoformat(report["ended_at"]) - started).total_seconds(), 2),
+            "slowest": [{"name": job["name"], "seconds": round(job["seconds"], 2)}
+                        for job in sorted(report["jobs"], key=lambda row: row.get("seconds", 0), reverse=True)[:10]
+                        if "seconds" in job]}))
     return code

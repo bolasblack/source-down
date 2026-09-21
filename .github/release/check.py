@@ -149,8 +149,6 @@ def check_release(argv: list[str]) -> int:
             if candidates:
                 fail(f"current version {current} has no matching release tag {expected}")
             return 0
-        if git("cat-file", "-t", f"refs/tags/{expected}") != "tag":
-            fail(f"previous release tag {expected} must be annotated")
         ancestor = subprocess.run(
             ["git", "merge-base", "--is-ancestor", f"refs/tags/{expected}^{{commit}}", "HEAD"],
             check=False,
@@ -204,9 +202,6 @@ def check_release(argv: list[str]) -> int:
         fail(f"missing or empty release note: {note}")
 
     if args.tagged:
-        tag_type = git("cat-file", "-t", f"refs/tags/{args.tag}")
-        if tag_type != "tag":
-            fail(f"release tag {args.tag} must be annotated")
         tag_commit = git("rev-parse", "--verify", f"refs/tags/{args.tag}^{{commit}}")
         head_commit = git("rev-parse", "--verify", "HEAD")
         if head_commit != tag_commit:

@@ -34,6 +34,13 @@ class ReleaseVersionTest(unittest.TestCase):
             cwd=self.root, capture_output=True, text=True,
         )
 
+    def release_tag(self, kind, target="HEAD"):
+        notes = self.root / "docs/releases"
+        notes.mkdir(parents=True, exist_ok=True)
+        (notes / "v0.1.0.md").write_text("# Source Down v0.1.0\n", encoding="utf-8")
+        arguments = ("-a", "-m", "Release v0.1.0") if kind == "annotated" else ()
+        self.git("tag", *arguments, "v0.1.0", target)
+
     def test_first_release_keeps_the_existing_version(self):
         result = self.check("--next-version", "0.1.0", "--first-release")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -63,18 +70,50 @@ class ReleaseVersionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("requires no existing release tags", result.stderr)
 
-    def test_annotated_release_remains_verifiable_and_prevents_another_first_release(self):
-        notes = self.root / "docs/releases"
-        notes.mkdir(parents=True)
-        (notes / "v0.1.0.md").write_text("# Source Down v0.1.0\n", encoding="utf-8")
-        self.git("tag", "-a", "v0.1.0", "-m", "Release v0.1.0")
-        previous = self.check("--previous-tag")
-        self.assertEqual((previous.returncode, previous.stdout), (0, "v0.1.0\n"), previous.stderr)
-        tagged = self.check("--tagged", "v0.1.0")
-        self.assertEqual(tagged.returncode, 0, tagged.stdout + tagged.stderr)
-        result = self.check("--next-version", "0.1.0", "--first-release")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("requires no existing release tags", result.stderr)
+    def test_release_tags_are_verifiable_and_prevent_another_first_release(self):
+        for kind in ("lightweight", "annotated"):
+            with self.subTest(kind=kind):
+                self.release_tag(kind)
+                try:
+                    previous = self.check("--previous-tag")
+                    with self.subTest(mode="previous"):
+                        self.assertEqual((previous.returncode, previous.stdout), (0, "v0.1.0\n"), previous.stderr)
+                    tagged = self.check("--tagged", "v0.1.0")
+                    with self.subTest(mode="tagged"):
+                        self.assertEqual(tagged.returncode, 0, tagged.stdout + tagged.stderr)
+                    result = self.check("--next-version", "0.1.0", "--first-release")
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn("requires no existing release tags", result.stderr)
+                finally:
+                    self.git("tag", "-d", "v0.1.0")
+
+    def test_tagged_release_requires_the_exact_current_commit(self):
+        release_commit = self.git("rev-parse", "HEAD").stdout.strip()
+        self.git("commit", "--quiet", "--allow-empty", "-m", "Later work")
+        for kind in ("lightweight", "annotated"):
+            with self.subTest(kind=kind):
+                self.release_tag(kind, release_commit)
+                try:
+                    tagged = self.check("--tagged", "v0.1.0")
+                    self.assertEqual(tagged.returncode, 1, tagged.stdout + tagged.stderr)
+                    self.assertIn("is not the commit tagged v0.1.0", tagged.stderr)
+                    previous = self.check("--previous-tag")
+                    self.assertEqual((previous.returncode, previous.stdout), (0, "v0.1.0\n"), previous.stderr)
+                finally:
+                    self.git("tag", "-d", "v0.1.0")
+
+    def test_previous_release_requires_an_ancestor_of_head(self):
+        tree = self.git("rev-parse", "HEAD^{tree}").stdout.strip()
+        unrelated = self.git("commit-tree", tree, "-m", "Unrelated release").stdout.strip()
+        for kind in ("lightweight", "annotated"):
+            with self.subTest(kind=kind):
+                self.release_tag(kind, unrelated)
+                try:
+                    previous = self.check("--previous-tag")
+                    self.assertEqual(previous.returncode, 1, previous.stdout + previous.stderr)
+                    self.assertIn("is not an ancestor of HEAD", previous.stderr)
+                finally:
+                    self.git("tag", "-d", "v0.1.0")
 
     def test_first_release_cannot_bypass_other_checker_modes(self):
         for arguments in (("--previous-tag",), ("--tagged", "v0.1.0")):

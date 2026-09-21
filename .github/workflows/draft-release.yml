@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing annotated tag to prepare as a draft
+        description: Existing release tag to prepare as a draft
         required: true
         type: string
 

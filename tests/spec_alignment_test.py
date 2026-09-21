@@ -149,6 +149,7 @@ def binary(name):
 
 class SpecAlignmentFixture(unittest.TestCase):
     SOURCES = ("a.rs", "b.rs")
+    TOOL = ROOT / "tools/spec_alignment.py"
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="source-down-alignment-")
@@ -173,24 +174,25 @@ class SpecAlignmentFixture(unittest.TestCase):
 
     def render(self):
         result = subprocess.run([str(binary("source-down")), "render", "--root", str(self.root), *self.SOURCES],
-                                capture_output=True, timeout=60)
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
+                                capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def run_tool(self, *arguments, cli=None, pin=True, env=None):
-        command = [sys.executable, str(ROOT / "tools/spec_alignment.py"),
+        command = [sys.executable, str(self.TOOL),
                    "--binary", str(cli or binary("source-down")),
                    "--root", str(self.root)]
         if pin:
             command += ["--run", str(self.run_dir)]
         command += list(arguments)
-        return subprocess.run(command, capture_output=True, timeout=300, env=env)
+        return subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
+                              timeout=300, env=env)
 
     def announced_run(self, result):
         prefix = "spec_alignment: run "
-        for line in result.stdout.decode().splitlines():
+        for line in result.stdout.splitlines():
             if line.startswith(prefix):
                 return Path(line[len(prefix):])
-        self.fail(result.stdout.decode())
+        self.fail(result.stdout)
 
     def packet(self, clause):
         return (self.packets / f"{clause}.md").read_bytes().decode("utf-8")
@@ -208,8 +210,8 @@ class SpecAlignmentFixture(unittest.TestCase):
     def build_packets(self):
         """A default run over a fixture with no ledger: every packet written, every clause unreviewed."""
         result = self.run_tool()
-        self.assertEqual(result.returncode, 1, result.stderr.decode())
-        self.assertIn("Unreviewed (no ledger row):", result.stdout.decode())
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Unreviewed (no ledger row):", result.stdout)
         return result
 
     def ledger_path(self):
@@ -220,14 +222,15 @@ class SpecAlignmentFixture(unittest.TestCase):
 
     def record(self, clause, verdict, *arguments):
         result = self.run_tool("--record", clause, "--verdict", verdict, *arguments)
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(result.returncode, 0, result.stderr)
         return result
 
     def entity(self, path, selector):
         """The bytes the read command itself returns for one named entity."""
         result = subprocess.run([str(binary("source-down")), "read", path, "--id", selector,
-                                 "--json", "--root", str(self.root)], capture_output=True, timeout=60)
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
+                                 "--json", "--root", str(self.root)],
+                                capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)["body"]["text"]
 
 
@@ -271,8 +274,8 @@ class SpecAlignmentTest(SpecAlignmentFixture):
         self.render()
         self.write("a.rs", SOURCE + "\nfn later() {}\n")
         result = self.run_tool()
-        self.assertEqual(result.returncode, 1, result.stdout.decode())
-        message = result.stderr.decode()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        message = result.stderr
         self.assertIn("stale search index: source a.rs changed", message)
         self.assertIn("mise run review", message)
 
@@ -282,8 +285,8 @@ class SpecAlignmentTest(SpecAlignmentFixture):
         self.write("stub", "#!/bin/sh\necho '{\"format_version\": 2, \"hits\": []}'\n")
         stub.chmod(0o755)
         result = self.run_tool(cli=stub)
-        self.assertEqual(result.returncode, 1, result.stdout.decode())
-        self.assertIn("spec_alignment: unsupported format_version 2", result.stderr.decode())
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("spec_alignment: unsupported format_version 2", result.stderr)
 
     @unittest.skipIf(os.name == "nt", "the stub command is a POSIX shell script")
     def test_an_entity_read_failing_for_another_reason_stops_the_run(self):
@@ -295,8 +298,8 @@ class SpecAlignmentTest(SpecAlignmentFixture):
                          f'    exit 1\n  fi\ndone\nexec {binary("source-down")} "$@"\n'.encode("utf-8"))
         stub.chmod(0o755)
         result = self.run_tool(cli=stub)
-        self.assertEqual(result.returncode, 1, result.stdout.decode())
-        self.assertIn("source-down: source_error: the disk went away", result.stderr.decode())
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("source-down: source_error: the disk went away", result.stderr)
         self.assertEqual(sorted(path.name for path in self.packets.glob("*.md")), [])
 
     def test_a_clause_with_more_call_sites_than_one_page_lists_every_one(self):
@@ -357,11 +360,11 @@ class SpecAlignmentTest(SpecAlignmentFixture):
         self.render()
         self.write("buried.rs", BURIED)
         result = self.run_tool()
-        self.assertEqual(result.returncode, 1, result.stdout.decode())
+        self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("### `buried.rs:4` → `spec_xxx_003_buried_out_of_reach` UNRESOLVED",
                       self.packet("SPEC-XXX-003"))
         self.assertIn("spec_alignment: unresolved test selector buried.rs:4 spec_xxx_003_buried_out_of_reach",
-                      result.stderr.decode())
+                      result.stderr)
 
     def test_the_fingerprint_survives_code_moving_above_a_marked_segment(self):
         self.render()
@@ -404,8 +407,8 @@ class SpecAlignmentTest(SpecAlignmentFixture):
                                  str(ROOT / "tools/spec_alignment.py"),
                                  "--binary", str(binary("source-down")),
                                  "--root", str(self.root), "--run", str(self.run_dir)],
-                                capture_output=True, timeout=300)
-        self.assertEqual(result.returncode, 1, result.stderr.decode())
+                                capture_output=True, text=True, encoding="utf-8", timeout=300)
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual(json.loads(record.read_bytes().decode("utf-8")), [])
         self.assertIn("## Clause", self.packet("SPEC-XXX-001"))
 
@@ -484,22 +487,22 @@ class SpecAlignmentLedgerTest(SpecAlignmentFixture):
 
     def test_an_unknown_verdict_is_refused_with_a_usage_message(self):
         result = self.run_tool("--record", "SPEC-XXX-001", "--verdict", "looks-fine")
-        self.assertEqual(result.returncode, 2, result.stdout.decode())
-        self.assertIn("usage:", result.stderr.decode())
-        self.assertIn("invalid choice: 'looks-fine'", result.stderr.decode())
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("usage:", result.stderr)
+        self.assertIn("invalid choice: 'looks-fine'", result.stderr)
         self.assertFalse(self.ledger_path().exists())
 
     def test_a_note_that_would_break_the_table_is_refused(self):
         result = self.run_tool("--record", "SPEC-XXX-001", "--verdict", "aligned", "--note", "一行 | 两格")
-        self.assertEqual(result.returncode, 2, result.stdout.decode())
-        self.assertIn("--note takes one line without '|'", result.stderr.decode())
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("--note takes one line without '|'", result.stderr)
         self.assertFalse(self.ledger_path().exists())
 
     def test_a_run_with_every_clause_reviewed_and_current_exits_zero(self):
         self.review_every_clause()
         result = self.run_tool()
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
-        self.assertEqual(result.stdout.decode(),
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout,
                          f"spec_alignment: run {self.run_dir}\n"
                          "spec_alignment: 3 clauses reviewed and current\n")
 
@@ -509,16 +512,32 @@ class SpecAlignmentLedgerTest(SpecAlignmentFixture):
         self.rewrite("a.rs", "    7", "    8")
         self.render()
         result = self.run_tool()
-        self.assertEqual(result.returncode, 1, result.stderr.decode())
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn(f"Stale (reviewed at another fingerprint):\n"
-                      f"  SPEC-XXX-001 {before} -> {self.fingerprint('SPEC-XXX-001')}\n", result.stdout.decode())
+                      f"  SPEC-XXX-001 {before} -> {self.fingerprint('SPEC-XXX-001')}\n", result.stdout)
 
     def test_a_clause_never_recorded_is_listed_unreviewed(self):
         self.render()
         self.record("SPEC-XXX-002", "aligned")
         result = self.run_tool()
-        self.assertEqual(result.returncode, 1, result.stderr.decode())
-        self.assertIn("Unreviewed (no ledger row):\n  SPEC-XXX-001\n  SPEC-XXX-003\n", result.stdout.decode())
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Unreviewed (no ledger row):\n  SPEC-XXX-001\n  SPEC-XXX-003\n", result.stdout)
+
+    def test_crlf_console_reports_are_compared_as_text(self):
+        self.write("crlf-console.py", f'''import runpy, sys
+sys.stdout.reconfigure(newline="\\r\\n")
+sys.stderr.reconfigure(newline="\\r\\n")
+runpy.run_path({str(self.TOOL)!r}, run_name="__main__")
+''')
+        self.TOOL = self.root / "crlf-console.py"
+        self.render()
+        result = self.run_tool()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Unreviewed (no ledger row):\n  SPEC-XXX-001\n  SPEC-XXX-002\n  SPEC-XXX-003\n",
+                      result.stdout)
+        invalid = self.run_tool("--record", "SPEC-XXX-001")
+        self.assertEqual(invalid.returncode, 2, invalid.stdout)
+        self.assertIn("spec_alignment.py: error: --record and --verdict go together\n", invalid.stderr)
 
     def test_forgetting_an_orphan_row_drops_it_and_leaves_every_other_row_untouched(self):
         self.review_every_clause()
@@ -528,12 +547,12 @@ class SpecAlignmentLedgerTest(SpecAlignmentFixture):
                      '<a id="spec-xxx-003"></a>\n## SPEC-XXX-003 第三条\n\n第三条正文。\n', "")
         self.render()
         result = self.run_tool("--forget", "SPEC-XXX-003")
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.ledger(), "".join(line for line in before.splitlines(keepends=True)
                                                 if not line.startswith("| SPEC-XXX-003 ")))
         after = self.run_tool()
-        self.assertEqual(after.returncode, 0, after.stderr.decode())
-        self.assertEqual(after.stdout.decode(),
+        self.assertEqual(after.returncode, 0, after.stderr)
+        self.assertEqual(after.stdout,
                          f"spec_alignment: run {self.run_dir}\n"
                          "spec_alignment: 2 clauses reviewed and current\n")
 
@@ -542,22 +561,22 @@ class SpecAlignmentLedgerTest(SpecAlignmentFixture):
         self.record("SPEC-XXX-001", "aligned")
         before = self.ledger_path().read_bytes()
         result = self.run_tool("--forget", "SPEC-XXX-002")
-        self.assertEqual(result.returncode, 1, result.stdout.decode())
-        self.assertIn("spec_alignment: SPEC-XXX-002 has no ledger row", result.stderr.decode())
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("spec_alignment: SPEC-XXX-002 has no ledger row", result.stderr)
         self.assertEqual(self.ledger_path().read_bytes(), before)
 
     def test_a_forgotten_row_of_a_defined_clause_is_listed_unreviewed_again(self):
         self.review_every_clause()
         self.assertEqual(self.run_tool("--forget", "SPEC-XXX-002").returncode, 0)
         result = self.run_tool()
-        self.assertEqual(result.returncode, 1, result.stderr.decode())
-        self.assertIn("Unreviewed (no ledger row):\n  SPEC-XXX-002\n", result.stdout.decode())
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Unreviewed (no ledger row):\n  SPEC-XXX-002\n", result.stdout)
 
     def test_forgetting_a_row_calls_no_command_of_the_product(self):
         self.render()
         self.record("SPEC-XXX-001", "aligned")
         result = self.run_tool("--forget", "SPEC-XXX-001", cli=self.root / "no-such-binary")
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.ledger(), self.HEADER)
 
     def test_forgetting_a_row_while_recording_one_is_refused(self):
@@ -567,8 +586,8 @@ class SpecAlignmentLedgerTest(SpecAlignmentFixture):
         for arguments in (("--record", "SPEC-XXX-001"), ("--verdict", "aligned"), ("--note", "一行")):
             with self.subTest(arguments=arguments):
                 result = self.run_tool("--forget", "SPEC-XXX-001", *arguments)
-                self.assertEqual(result.returncode, 2, result.stdout.decode())
-                self.assertIn("--forget", result.stderr.decode())
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn("--forget", result.stderr)
         self.assertEqual(self.ledger_path().read_bytes(), before)
 
     def test_a_ledger_row_whose_clause_is_gone_is_listed_orphan(self):
@@ -578,21 +597,34 @@ class SpecAlignmentLedgerTest(SpecAlignmentFixture):
         self.rewrite("docs/specs/x.md", '<a id="spec-xxx-003"></a>\n## SPEC-XXX-003 第三条\n\n第三条正文。\n', "")
         self.render()
         result = self.run_tool()
-        self.assertEqual(result.returncode, 1, result.stderr.decode())
-        self.assertIn("Orphan (ledger row without a clause):\n  SPEC-XXX-003\n", result.stdout.decode())
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Orphan (ledger row without a clause):\n  SPEC-XXX-003\n", result.stdout)
 
-    def cache_env(self):
-        cache = tempfile.TemporaryDirectory(prefix="alignment-cache-")
+    def cache_env(self, *, parent=None):
+        cache = tempfile.TemporaryDirectory(prefix="alignment-cache-", dir=parent)
         self.addCleanup(cache.cleanup)
-        return {**os.environ, "XDG_CACHE_HOME": cache.name}, Path(cache.name)
+        return {**os.environ, "XDG_CACHE_HOME": cache.name}, Path(cache.name).resolve()
 
     def test_a_default_run_writes_outside_the_project_root(self):
         env, cache = self.cache_env()
         self.render()
         result = self.run_tool(pin=False, env=env)
-        self.assertEqual(result.returncode, 1, result.stderr.decode())
+        self.assertEqual(result.returncode, 1, result.stderr)
         run = self.announced_run(result)
-        self.assertTrue(run.is_relative_to(cache))
+        self.assertTrue(run.is_relative_to(cache), f"{run=} {cache=}")
+        self.assertFalse(run.is_relative_to(self.root))
+        self.assertTrue((run / "packets" / "SPEC-XXX-001.md").is_file())
+
+    def test_a_default_run_accepts_a_symlinked_cache_parent(self):
+        _env, parent = self.cache_env()
+        alias = self.root / "cache-alias"
+        alias.symlink_to(parent, target_is_directory=True)
+        env, cache = self.cache_env(parent=alias)
+        self.render()
+        result = self.run_tool(pin=False, env=env)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        run = self.announced_run(result)
+        self.assertTrue(run.is_relative_to(cache), f"{run=} {cache=}")
         self.assertFalse(run.is_relative_to(self.root))
         self.assertTrue((run / "packets" / "SPEC-XXX-001.md").is_file())
 
@@ -603,14 +635,14 @@ class SpecAlignmentLedgerTest(SpecAlignmentFixture):
         first_run = self.announced_run(first)
         for clause in ("SPEC-XXX-001", "SPEC-XXX-002", "SPEC-XXX-003"):
             recorded = self.run_tool("--record", clause, "--verdict", "aligned", pin=False, env=env)
-            self.assertEqual(recorded.returncode, 0, recorded.stderr.decode())
+            self.assertEqual(recorded.returncode, 0, recorded.stderr)
             self.assertEqual(self.announced_run(recorded), first_run)
         (first_run / "keep").write_text("first", encoding="utf-8")
         second = self.run_tool(pin=False, env=env)
-        self.assertEqual(second.returncode, 0, second.stderr.decode())
+        self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(self.announced_run(second), first_run)
         self.assertEqual((first_run / "keep").read_text(encoding="utf-8"), "first")
-        self.assertIn("spec_alignment: 3 clauses reviewed and current", second.stdout.decode())
+        self.assertIn("spec_alignment: 3 clauses reviewed and current", second.stdout)
 
     def test_new_run_opens_an_empty_ledger_in_a_new_folder(self):
         env, _cache = self.cache_env()
@@ -618,39 +650,39 @@ class SpecAlignmentLedgerTest(SpecAlignmentFixture):
         first = self.run_tool(pin=False, env=env)
         first_run = self.announced_run(first)
         recorded = self.run_tool("--record", "SPEC-XXX-001", "--verdict", "aligned", pin=False, env=env)
-        self.assertEqual(recorded.returncode, 0, recorded.stderr.decode())
+        self.assertEqual(recorded.returncode, 0, recorded.stderr)
         (first_run / "keep").write_text("first", encoding="utf-8")
         opened = self.run_tool("--new-run", pin=False, env=env)
-        self.assertEqual(opened.returncode, 1, opened.stderr.decode())
+        self.assertEqual(opened.returncode, 1, opened.stderr)
         second_run = self.announced_run(opened)
         self.assertNotEqual(second_run, first_run)
         self.assertEqual((first_run / "keep").read_text(encoding="utf-8"), "first")
         self.assertFalse((second_run / LEDGER).exists())
-        self.assertIn("Unreviewed (no ledger row):\n  SPEC-XXX-001\n", opened.stdout.decode())
+        self.assertIn("Unreviewed (no ledger row):\n  SPEC-XXX-001\n", opened.stdout)
 
     def test_new_run_while_recording_is_refused(self):
         result = self.run_tool("--new-run", "--record", "SPEC-XXX-001", "--verdict", "aligned")
-        self.assertEqual(result.returncode, 2, result.stdout.decode())
-        self.assertIn("--new-run", result.stderr.decode())
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("--new-run", result.stderr)
 
     def test_archive_copies_the_run_folder_and_refuses_to_overwrite(self):
         self.render()
         self.build_packets()
         dest = self.root / "keep"
         result = self.run_tool("--archive", str(dest))
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(result.returncode, 0, result.stderr)
         archived = dest / self.run_dir.name
         self.assertTrue((archived / "packets" / "SPEC-XXX-001.md").is_file())
-        self.assertIn(f"spec_alignment: archived {archived}", result.stdout.decode())
+        self.assertIn(f"spec_alignment: archived {archived}", result.stdout)
         again = self.run_tool("--archive", str(dest))
-        self.assertEqual(again.returncode, 1, again.stdout.decode())
-        self.assertIn("already exists", again.stderr.decode())
+        self.assertEqual(again.returncode, 1, again.stdout)
+        self.assertIn("already exists", again.stderr)
 
     def test_record_without_a_run_fails(self):
         env, _cache = self.cache_env()
         result = self.run_tool("--record", "SPEC-XXX-001", "--verdict", "aligned", pin=False, env=env)
-        self.assertEqual(result.returncode, 1, result.stdout.decode())
-        self.assertIn("spec_alignment: no alignment run", result.stderr.decode())
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("spec_alignment: no alignment run", result.stderr)
 
 
 if __name__ == "__main__":

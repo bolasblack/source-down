@@ -12,6 +12,13 @@ run directory it writes (ledger and packets together). Its own tests live in
 `tests/spec_alignment_test.py`, next to the other development-tool tests described by
 the [readable E2E contract](e2e.md).
 
+## Portable test observations
+
+The tests follow the [cross-platform work rules](../../AGENTS.md#work). Regression
+cases launch the real tool with CRLF stdout and stderr, and with a cache parent
+reached through a directory symlink. Source fixtures, packets and ledger
+preservation checks retain their original byte assertions.
+
 ## Public API only
 
 The tool reaches Source Down exclusively through the published command line:

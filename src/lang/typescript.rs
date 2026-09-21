@@ -52,6 +52,8 @@ fn entity<'a>(node: tree_sitter::Node<'a>, source: &SourceFile) -> syntax::Entit
         | "type_alias_declaration"
         | "enum_declaration"
         | "internal_module"
+        | "module"
+        | "abstract_class_declaration"
         | "function_signature"
         | "method_signature"
         | "abstract_method_signature"
@@ -75,6 +77,7 @@ fn entity<'a>(node: tree_sitter::Node<'a>, source: &SourceFile) -> syntax::Entit
             Entity::Named(vec![declaration])
         }
         "interface_body" | "ambient_declaration" => Entity::Children,
+        "index_signature" => Entity::Incomplete,
         _ => javascript::entity(node, source),
     }
 }

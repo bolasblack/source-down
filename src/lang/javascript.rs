@@ -53,6 +53,12 @@ pub(super) fn comment(source: &SourceFile, range: Range<usize>) -> Comment {
 pub(super) fn entity<'a>(node: tree_sitter::Node<'a>, source: &SourceFile) -> syntax::Entity<'a> {
     use syntax::{Declaration, Entity};
     match node.kind() {
+        "shorthand_property_identifier" => {
+            let mut declaration = Declaration::new(node, source, node);
+            declaration.extractable = false;
+            declaration.incomplete = true;
+            Entity::Named(vec![declaration])
+        }
         "function_declaration"
         | "generator_function_declaration"
         | "class_declaration"

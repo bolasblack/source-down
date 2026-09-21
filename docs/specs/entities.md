@@ -11,6 +11,8 @@
 
 文件、内联模块、trait、各个 impl 和函数体构成声明容器；普通块、表达式和控制流中的显式 item
 属于最近的声明容器。枚举变体、字段、参数、局部 let、use 和宏 token 内容不提供节点。
+const/static 声明自身不建立容器；其初始化表达式中的显式 item 归最近的声明容器，
+其中的宏调用也使该容器的候选不完整。
 函数（含签名）、struct、enum、union、type、trait、const、static、关联 type 与宏定义使用声明的名称。
 每个 impl 单独成节点，名称为其 `for` 后目标类型（固有 impl 为 impl 目标）的完整原始类型文本，
 含泛型参数或限定路径；候选说明同时保留 trait 与目标。不合并 struct 和 impl，不把 trait 的方法复制给 impl。
@@ -46,7 +48,8 @@ module 的显式 structure/signature 提供子节点，functor 参数不作为�
 `let rec ... and ...`、`type ... and ...`、`module rec ... and ...` 各成员有自己的名字和声明位置，
 但抽取任何成员都取得完整连续声明组（含 let/type/module、rec、and），不拼接或补写前缀。
 连续 shadowing 保留每次声明。前置注释不附着；语法内属性随声明组保留。
-解构 let、include 或扩展产生的名称未建立完整候选时，所在容器报能力不足。
+解构 let、include 或扩展产生的名称未建立完整候选时，所在容器报能力不足；
+此规则同时适用于 implementation 的 structure include 和 interface 的 signature include。
 class 的具名绑定保留不可抽取候选，不开放其成员；exception 保留完整具名声明。
 
 ```ocaml
@@ -72,7 +75,8 @@ interface `module M : sig val f : int end` 的 `["M","f"]` 选择 `val f : int`�
 
 简单 `const`、`let`、`var` 绑定使用变量名，选择范围是包含关键字与分号（若有）的整条变量声明。
 同一声明中的多个简单绑定各自参与名称匹配，选择任何成员均返回完整声明，不单独截取初始化表达式。
-类字段与对象属性绑定的名称与位置保留为不可抽取候选。
+类字段与对象属性绑定（包括对象简写属性）的名称与位置保留为不可抽取候选，
+与同名方法共同按原位置编号；简写属性的原始标识符就是它的名称。
 变量的值为显式对象字面量时能提供完整方法子层（动态键仍使其不完整）；其他值不开放子层。
 表达式中的具名函数与匿名函数不提升到外层。export 前缀包含在声明范围中，前置注释不包含；
 方法范围包含 static/get/set、语法内装饰器等前缀。
@@ -95,6 +99,8 @@ function f() { return 2; }
 使用 JavaScript 的容器、名字与范围规则，加上 interface、type alias、enum、具名 namespace/module、
 独立函数签名、方法签名和 abstract 方法签名。interface 与 namespace 提供显式成员；type alias 与 enum 是叶子，
 不做声明合并。interface 属性是具名不可抽取候选，动态键使该成员层不完整。
+具名 module 与 abstract class 同样提供显式成员；interface 的 index signature 表示
+无法枚举的键，使该 interface 的成员层不完整，不影响外层声明或相邻 interface。
 函数的每个 overload 签名与实现分别计数；不默认选择带函数体的一项。方法的 static/instance、
 签名/实现同样计数。范围包含 declaration 内的分号及直接包围它的 declare/export 前缀；
 成员签名之后、由成员列表分隔的分号不附着到签名。TSX 使用同样的实体规则和 TSX 语法。
@@ -117,6 +123,7 @@ function f(x:any) { return x; }
 名称取声明标识符；方法候选说明包含完整 receiver 文本。前置注释不附着。
 分组 type 声明的各名称保留实际顺序，选择任何成员取得包含 `type (...)` 的完整声明组。
 具名 var/const 绑定保留不可抽取候选（多名称逐一保留），空白标识符 `_` 不提供节点。
+单项及括号分组中的绑定遵守同一规则；分隔名称的逗号不构成候选。
 
 ```go
 package p

@@ -333,7 +333,7 @@ fn entity<'a>(node: tree_sitter::Node<'a>, source: &SourceFile) -> syntax::Entit
         | "module_definition"
         | "class_definition"
         | "exception_definition" => return Entity::Children,
-        "include_module" => return Entity::Incomplete,
+        "include_module" | "include_module_type" => return Entity::Incomplete,
         _ if kind.contains("extension") => return Entity::Incomplete,
         _ => return Entity::Ignore,
     };

@@ -93,6 +93,7 @@ pub(super) enum Entity<'a> {
     Children,
     Incomplete,
     Named(Vec<Declaration<'a>>),
+    TransparentNamed(Vec<Declaration<'a>>),
 }
 
 pub(super) struct Declaration<'a> {
@@ -134,16 +135,13 @@ pub(super) fn entities(
         describe: Describe,
         tree: &mut crate::selection::Tree,
     ) {
-        match describe(node, source) {
+        let entity = describe(node, source);
+        let transparent = matches!(entity, Entity::Children | Entity::TransparentNamed(_));
+        match entity {
             Entity::Ignore => (),
             Entity::Incomplete => tree.incomplete = true,
-            Entity::Children => {
-                let mut cursor = node.walk();
-                for child in node.named_children(&mut cursor) {
-                    collect(child, source, describe, tree);
-                }
-            }
-            Entity::Named(declarations) => {
+            Entity::Children => (),
+            Entity::Named(declarations) | Entity::TransparentNamed(declarations) => {
                 for declaration in declarations {
                     let mut children = crate::selection::Tree {
                         incomplete: declaration.incomplete,
@@ -160,6 +158,12 @@ pub(super) fn entities(
                         children,
                     });
                 }
+            }
+        }
+        if transparent {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                collect(child, source, describe, tree);
             }
         }
     }

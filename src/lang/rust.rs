@@ -261,7 +261,11 @@ fn entity<'a>(node: tree_sitter::Node<'a>, source: &SourceFile) -> syntax::Entit
                     .trim()
                     .into();
             }
-            Entity::Named(vec![declaration])
+            if matches!(node.kind(), "const_item" | "static_item") {
+                Entity::TransparentNamed(vec![declaration])
+            } else {
+                Entity::Named(vec![declaration])
+            }
         }
         "macro_invocation" => Entity::Incomplete,
         "line_comment"

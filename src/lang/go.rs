@@ -43,7 +43,7 @@ fn entity<'a>(node: tree_sitter::Node<'a>, source: &SourceFile) -> syntax::Entit
             let mut cursor = node.walk();
             let declarations = node
                 .children_by_field_name("name", &mut cursor)
-                .filter(|name| &source.text[name.byte_range()] != "_")
+                .filter(|name| name.is_named() && &source.text[name.byte_range()] != "_")
                 .map(|name| {
                     let mut declaration = Declaration::new(node, source, name);
                     declaration.body = None;
@@ -62,9 +62,8 @@ fn entity<'a>(node: tree_sitter::Node<'a>, source: &SourceFile) -> syntax::Entit
                 .collect();
             Entity::Named(declarations)
         }
-        "source_file" | "type_declaration" | "var_declaration" | "const_declaration" => {
-            Entity::Children
-        }
+        "source_file" | "type_declaration" | "var_declaration" | "var_spec_list"
+        | "const_declaration" => Entity::Children,
         _ => Entity::Ignore,
     }
 }

@@ -5,12 +5,50 @@ import os
 import shutil
 import tarfile
 import tempfile
+import time
 import unittest
+import zipfile
 
-from tools.release import ROOT, extract_files, verify_source
+from tools.release import ROOT, extract_files, verify_source, write_zip
 
 
 class ReleaseArchiveTest(unittest.TestCase):
+    def test_zip_preserves_files_and_clamps_out_of_range_timestamps(self):
+        normal_date = (2000, 6, 15, 12, 34, 56)
+        cases = (
+            (123456789, (1980, 1, 1, 0, 0, 0)),
+            (time.mktime((*normal_date, 0, 0, -1)), normal_date),
+            (4354905600, (2107, 12, 31, 23, 59, 58)),
+        )
+        for timestamp, expected_date in cases:
+            with self.subTest(timestamp=timestamp), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                original = root / "LICENSE"
+                original.write_bytes(b"Dependency license\r\nCopyright holder\n")
+                os.utime(original, (timestamp, timestamp))
+                package = root / "staging/source-down-0.1.0-x86_64-pc-windows-msvc"
+                notice = package / "third-party/dependency-1.0.0/LICENSE"
+                notice.parent.mkdir(parents=True)
+                shutil.copy2(original, notice)
+                readme = package / "README.md"
+                readme.write_bytes(b"Release readme\n")
+                expected_files = {path.relative_to(package.parent).as_posix(): path.read_bytes()
+                                  for path in (readme, notice)}
+                original_mtimes = {path: path.stat().st_mtime_ns for path in (original, notice, readme)}
+                archive_path = root / "release.zip"
+
+                write_zip(package, archive_path)
+
+                with zipfile.ZipFile(archive_path) as archive:
+                    self.assertEqual(archive.namelist(), sorted(expected_files))
+                    self.assertEqual(archive.getinfo(notice.relative_to(package.parent).as_posix()).date_time,
+                                     expected_date)
+                destination = root / "unpacked"
+                extract_files(archive_path, destination)
+                self.assertEqual({path.relative_to(destination).as_posix(): path.read_bytes()
+                                  for path in destination.rglob("*") if path.is_file()}, expected_files)
+                self.assertEqual({path: path.stat().st_mtime_ns for path in original_mtimes}, original_mtimes)
+
     def test_failed_relocated_acceptance_retains_its_real_results(self):
         # Exercise extraction and the real coordinator. This fixture's build task
         # supplies an existing compiled plugin; the full rebuild belongs to release.

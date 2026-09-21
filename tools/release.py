@@ -38,6 +38,15 @@ def tar_filter(info):
     return info
 
 
+def write_zip(package, destination):
+    # Cargo dependency notices can predate ZIP's 1980 timestamp floor.
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED,
+                         strict_timestamps=False) as archive:
+        for path in sorted(package.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(package.parent).as_posix())
+
+
 def extract_files(path, destination):
     if zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as archive:
@@ -139,10 +148,7 @@ def release(binary, target, spec_plugin, include_source):
             "linking": linking,
         }, indent=2) + "\n")
         if target.endswith("-msvc"):
-            with zipfile.ZipFile(binary_archive, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for path in sorted(package.rglob("*")):
-                    if path.is_file():
-                        archive.write(path, path.relative_to(staging).as_posix())
+            write_zip(package, binary_archive)
         else:
             with tarfile.open(binary_archive, "w:gz") as archive:
                 archive.add(package, arcname=binary_name)

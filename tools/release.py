@@ -32,6 +32,13 @@ def command(*args, **kwargs):
     return result.stdout
 
 
+def check(*args, **kwargs):
+    """Stream long validation progress while preserving its original failure status."""
+    result = subprocess.run([str(arg) for arg in args], timeout=1200, **kwargs)
+    if result.returncode:
+        raise RuntimeError(f"validation exited {result.returncode}: {' '.join(map(str, args))}")
+
+
 def tar_filter(info):
     if "__pycache__" in Path(info.name).parts or info.name.endswith(".pyc"):
         return None
@@ -157,10 +164,8 @@ def release(binary, target, spec_plugin, include_source):
         extract_files(binary_archive, unpacked)
         extracted_binary = unpacked / binary_name / "bin" / executable
         assert command(extracted_binary, "--version") == command(binary, "--version")
-        print(command(sys.executable, ROOT / "tools/acceptance.py", "--binary", extracted_binary,
-                      "--spec-plugin", spec_plugin, cwd=unpacked, env=environment(host)).decode().strip())
-        command(sys.executable, ROOT / "tests/portability_test.py", "--binary", extracted_binary,
-                cwd=unpacked, env=environment(host))
+        check(sys.executable, ROOT / "tools/test.py", "--artifact", extracted_binary,
+              "--spec-plugin", spec_plugin, cwd=unpacked, env=environment(host))
         print("native portability: PASS (paths, hard links, process scopes, close/write deadlines, interrupt and blocked stdout)")
         if include_source:
             verify_source(source_archive, unpacked, source_name, extracted_binary)
@@ -183,8 +188,8 @@ def verify_source(source_archive, unpacked, source_name, extracted_binary):
     suffix = ".exe" if os.name == "nt" else ""
     plugin = source_root / "target/release/examples" / f"spec-plugin{suffix}"
     try:
-        print(command("mise", "exec", "--", "python", "tools/build.py", "--", "python", "tools/acceptance.py",
-                      "--binary", extracted_binary, "--spec-plugin", plugin, cwd=source_root, env=build_env).decode().strip())
+        check("mise", "exec", "--", "python", "tools/build.py", "--", "python", "tools/acceptance.py",
+              "--binary", extracted_binary, "--spec-plugin", plugin, cwd=source_root, env=build_env)
     finally:
         # Both failed and successful runs survive the disposable checkout's cleanup.
         # Run IDs and relative reading/source links remain unchanged.

@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 from .case import identity
-from .process import ProcessScope
+from process_scope import ProcessScope
 from .result import now
 
 

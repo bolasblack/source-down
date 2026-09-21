@@ -12,6 +12,8 @@ Per-clause review packets, their fingerprint and the alignment ledger are govern
 The [readable E2E contract](e2e.md), [migration ledger](e2e-migration.md) and
 [delivery record](e2e-verification.md) describe the shared Python acceptance collection,
 retained native tests, development order and per-run reading artifacts.
+The [parallel-runner verification](test-parallelism-verification.md) records the
+shared test budget, failure and interruption evidence, and measured entry-point costs.
 
 ## Technology and module boundaries
 

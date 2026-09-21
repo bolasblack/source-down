@@ -261,13 +261,23 @@ modules/suites, duplicate identities and import errors are execution errors.
 
 `--case render` selects that exact directory subtree; `--case
 render/test_missing_material.py` selects that exact file. An empty selection fails.
-`--list` records discovery without executing tests. Selected cases execute serially;
-ordinary failures do not prevent independent cases from running. A filtered run is
+`--list` records discovery without executing tests. `--jobs N` selects a positive
+worker limit; its default is `SD_TEST_JOBS`, or the available CPU count when unset.
+Independent scenario modules execute concurrently in separate processes. Tests
+within a module retain unittest's ordered class/module fixture lifecycle. Each
+worker owns its current case, mutable projects, command logs and cleanup resources;
+the coordinator alone owns discovery, final outcomes and reading publication.
+`--jobs 1` provides ordered execution for diagnosis. Completed cases and durations
+are printed during execution, including through Cargo's bridge. Recorded durations
+may prioritize longer modules; these hints never select cases or determine outcomes.
+Ordinary failures do not prevent independent cases from running. A filtered run is
 always labeled partial, even if every selected case passes.
 
 Each result records identity, title, source, owning clauses, selection, applicability,
 start/end times, command/log records, subtests and one of `passed`, `failed`, `error`,
-`skipped`, `not_run`. Only actual `unittest` result events determine outcomes. An
+`skipped`, `not_run`. Actual `unittest` result events determine completed test
+outcomes. Worker loss records an execution error for started, unfinished cases;
+cases that never started retain `not_run`. An
 ordinary skip or expected failure cannot establish full acceptance. A case's explicit
 `platforms` declaration may identify a platform-inapplicable skip with its reason;
 the report retains it and names the platform actually exercised. Full success
@@ -283,8 +293,11 @@ logs. Preserve the inherited build and coverage environment, including
 relevant facts rather than the complete environment.
 
 Commands have bounded waits and clean up their process scopes on timeout or
-interruption. An interrupted run saves acquired results, marks the active case as
-interrupted/error and the remaining cases `not_run`, and exits 130. Regular test,
+interruption. An interrupted run stops dispatching, interrupts every active worker,
+waits for their owned commands to be cleaned up, saves acquired results, marks
+active cases as interrupted/error and the remaining cases `not_run`, and exits 130.
+A missing or invalid worker result is an execution error, never a passing case.
+Regular test,
 discovery or documentation failure exits 1. Successful complete or selected
 execution exits 0, with its scope explicitly recorded.
 
@@ -318,7 +331,17 @@ locally built CLI. Cargo's `e2e` target is a thin bridge to this same coordinato
 `CARGO_BIN_EXE_source-down`, without reading generation. Python developer-tool tests
 retain `*_test.py`, so they do not rediscover `test_*.py` scenarios.
 
-`mise run test` keeps all native tests, the single E2E bridge, Python tool tests and
+`mise run test` builds its artifacts once, then schedules native Rust tests, Python
+tool tests and readable E2E modules under one worker budget. Python tool tests with
+class or module fixtures execute together; independent methods have separate workers.
+Cargo's discovered
+test artifacts and unittest discovery remain the inventories; no hand-maintained
+test list substitutes for them. Rust doctests are included. Direct `cargo test`
+retains the single E2E bridge to the same coordinator. Python tool workers set their
+default nested E2E concurrency to one; explicit concurrency tests may request more.
+`mise run test -- --no-coverage` uses the same collections without instrumentation.
+`mise run test -- --review` also publishes the E2E reading from this execution,
+without repeating the scenarios. The test task retains
 separate 90% line-coverage gates for core, Rust spec plugin and Python project plugin.
 Line coverage is distinct from spec-plugin reference coverage. `lint`, full source
 `review`, readable `acceptance`, and native `release` must pass. Release verification

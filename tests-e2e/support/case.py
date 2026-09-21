@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from .result import now
-from .process import execute
+from process_scope import execute
 from .filesystem import read_bytes
 from types import MappingProxyType
 from .artifacts import ArtifactAssertions, OutputSnapshot, UNSET, utf8
@@ -26,7 +26,7 @@ def identity(path):
 
 
 class RunContext:
-    def __init__(self, repository, run, binary, spec_plugin):
+    def __init__(self, repository, run, binary, spec_plugin, *, logs="logs", env=None):
         self.repository, self.run = repository, run
         self.binary = binary.resolve()
         self.spec_plugin = spec_plugin.resolve()
@@ -36,21 +36,24 @@ class RunContext:
         self.resources = ExitStack()
         self.mutants = {}
         self.mutations = []
+        self.logs = logs
+        self.environment = env
 
     def command_record(self, arguments, *, cwd, input=None):
         row = {"case_id": self.active_case, "argv": arguments, "cwd": str(cwd),
                "executable": None,
                "started_at": now(), "ended_at": None, "exit_code": None,
-               "stdout": f"logs/command-{len(self.commands) + 1:04d}.stdout.bin",
-               "stderr": f"logs/command-{len(self.commands) + 1:04d}.stderr.bin"}
+               "stdout": f"{self.logs}/command-{len(self.commands) + 1:04d}.stdout.bin",
+               "stderr": f"{self.logs}/command-{len(self.commands) + 1:04d}.stderr.bin"}
         self.commands.append(row)
-        (self.run / "logs").mkdir(exist_ok=True)
+        (self.run / self.logs).mkdir(parents=True, exist_ok=True)
         if input is not None:
-            row["stdin"] = f"logs/command-{len(self.commands):04d}.stdin.bin"
+            row["stdin"] = f"{self.logs}/command-{len(self.commands):04d}.stdin.bin"
             (self.run / row["stdin"]).write_bytes(input)
         return row
 
     def command(self, arguments, *, cwd, input=None, timeout=30, env=None):
+        env = self.environment if env is None else env
         arguments = [str(argument) for argument in arguments]
         row = self.command_record(arguments, cwd=cwd, input=input)
         stdout_path, stderr_path = self.run / row["stdout"], self.run / row["stderr"]
@@ -69,7 +72,7 @@ class RunContext:
 
     def running(self, arguments, *, cwd, env=None):
         from .continuous import RunningCommand
-        return RunningCommand(self, arguments, cwd=cwd, env=env)
+        return RunningCommand(self, arguments, cwd=cwd, env=self.environment if env is None else env)
 
 
 class Project:

@@ -46,3 +46,5 @@ decisions/AGD-015_assemble-review-packets-through-the-public-cli.md -(r)-> decis
 decisions/AGD-015_assemble-review-packets-through-the-public-cli.md -(r)-> decisions/AGD-007_check-spec-references-through-a-project-plugin.md
 decisions/AGD-015_assemble-review-packets-through-the-public-cli.md -(r)-> decisions/AGD-008_enforce-ninety-percent-test-coverage.md
 decisions/AGD-016_keep-alignment-runs-outside-the-project.md -(u)-> decisions/AGD-015_assemble-review-packets-through-the-public-cli.md
+decisions/AGD-018_parallelize-independent-tests-under-one-budget.md -(u)-> decisions/AGD-008_enforce-ninety-percent-test-coverage.md
+decisions/AGD-018_parallelize-independent-tests-under-one-budget.md -(u)-> decisions/AGD-013_readable-e2e-with-one-execution-owner.md

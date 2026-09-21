@@ -159,6 +159,13 @@ Both unit and integration tests contribute, including real CLI and plugin proces
 Reports appear in `.source-down/coverage/`; see the [measurement scope and report guide](docs/engineering/coverage.md).
 Spec reference coverage remains a separate check of clause usage.
 
+Tests run in parallel using the available CPUs. Use `mise run test -- --jobs 4`
+to set a worker limit, or `--jobs 1` for ordered diagnosis. `SD_TEST_JOBS` sets the
+same default for test, acceptance and release verification. Run
+`mise run test -- --review` to get coverage and E2E reading from one execution;
+`mise run test -- --no-coverage` runs all collections without collecting coverage.
+Per-job outcomes and logs are retained in `.source-down/test-runs/<run-id>/`.
+
 `acceptance` prints absolute paths to this run's results and generated reading entry
 under `.source-down/e2e/runs/<run-id>/`. The entry groups scenarios by workflow and
 links their actual status, preserved source and owning clauses. Use

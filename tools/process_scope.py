@@ -1,4 +1,4 @@
-"""Own a subprocess scope, including children, until its logs are complete."""
+"""Own test and fixture subprocess scopes until their logs and cleanup are complete."""
 import base64
 import ctypes
 import json

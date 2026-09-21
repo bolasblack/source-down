@@ -1,18 +1,13 @@
 #[test]
 fn readable_scenarios_use_the_built_artifact() {
-    let output = std::process::Command::new("python")
+    let status = std::process::Command::new("python")
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args([
             "tools/acceptance.py",
             "--binary",
             env!("CARGO_BIN_EXE_source-down"),
         ])
-        .output()
+        .status()
         .unwrap();
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(status.success(), "readable E2E exited with {status}");
 }

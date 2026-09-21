@@ -54,9 +54,7 @@ jobs:
         if: runner.os != 'Linux'
         run: |
           mkdir -p .source-down/test-logs
-          python tools/build.py -- cargo build --locked --bins --examples 2>&1 | tee .source-down/test-logs/build.log
-          python tools/build.py -- cargo test --locked 2>&1 | tee .source-down/test-logs/rust.log
-          python tools/build.py -- python -m unittest discover -s tests -p '*_test.py' 2>&1 | tee .source-down/test-logs/python.log
+          python tools/build.py -- python tools/test.py --no-coverage 2>&1 | tee .source-down/test-logs/tests.log
       - name: Documentation, self-review and benchmark gates
         if: runner.os == 'Linux'
         run: |
@@ -70,6 +68,7 @@ jobs:
           name: test-evidence-${{ matrix.os }}
           path: |
             .source-down/test-logs/
+            .source-down/test-runs/
             .source-down/e2e/runs/
             .source-down/coverage/
             .source-down/watch-benchmark/

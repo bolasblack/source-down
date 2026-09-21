@@ -13,7 +13,7 @@ project: "Source Down"
 branch: "master"
 tag_prefix: "v"
 test: |-
-  mise run check && mise run review && mise run acceptance && mise run benchmark
+  mise run lint && mise run test -- --review && mise run review && mise run benchmark
 build: |-
   mise run release
 install: ""
@@ -59,7 +59,17 @@ Windows means 64-bit x86. musl archives must contain statically linked ELF execu
 
 ZIP member timestamps outside 1980–2107 are clamped to the nearest representable boundary. This applies to dependency notices with older modification times; file contents and original modification times remain unchanged.
 
-Each native job runs the actual extracted executable and project plugins through `tools/acceptance.py`, then runs `tests/portability_test.py` against that same executable to check nested Unicode paths, hard-link protection, process-tree cleanup, close deadlines, pending writes and cancellation under blocked stdout. The Linux GNU verification job additionally owns coverage and benchmark gates. Cross compilation proves compilation only; native runner success is required before the draft job runs. There are seven archives and one final `SHA256SUMS` covering exactly those seven archives.
+Each native job passes the actual extracted executable and project plugin to
+`tools/test.py --artifact PATH --spec-plugin PATH`. Its shared worker pool runs the
+readable scenarios and native portability checks against that same executable:
+nested Unicode paths, hard-link protection, process-tree cleanup, close deadlines,
+pending writes and cancellation under blocked stdout. The preflight
+`test --review` publishes reading from the instrumented test execution. Extracted
+artifacts and relocated source still require their own acceptance evidence.
+The Linux GNU verification job additionally owns coverage and benchmark gates.
+Cross compilation proves compilation only; native runner success is required before
+the draft job runs. There are seven archives and one final `SHA256SUMS` covering
+exactly those seven archives.
 
 Action pins were resolved from these upstream release tags with the packaged action resolver. Updating pins or regenerating setup requires preserving and revalidating this repository's matrix adaptation.
 

@@ -1,23 +1,34 @@
 # Test coverage
 
 [AGD-008](../../.agents/decisions/AGD-008_enforce-ninety-percent-test-coverage.md) owns the acceptance gates and shared test task.
+[AGD-018](../../.agents/decisions/AGD-018_parallelize-independent-tests-under-one-budget.md)
+records the shared process budget; the [parallel-runner verification](test-parallelism-verification.md)
+records external-entry checks, full-suite results and timing limits.
 Run from this project root after `mise install`:
 
 ```sh
 mise run test
 mise run check
+mise run test -- --review
+mise run test -- --no-coverage --jobs 4
 ```
 
 `test` prepares the isolated coverage environment through `coverage-setup`, runs all Rust and Python tests, writes reports, and enforces the 90% gates.
 `lint` runs formatting, Clippy, documentation and AGD checks. `check` depends on both `lint` and `test`.
 mise shares the same test task when these entry points are requested together.
+`--jobs N` (or `SD_TEST_JOBS=N`) bounds parallel test processes; the default is the
+available CPU count. `--jobs 1` gives ordered diagnostic execution. `--review`
+publishes readable E2E material from the same run, avoiding a second scenario run.
+`--no-coverage` runs the same inventories without profile collection and is the
+native macOS/Windows CI entry. `--artifact PATH --spec-plugin PATH` runs E2E and
+native portability against supplied release artifacts without building substitutes.
 
 ## Continuous integration
 
 The [test workflow](../../.github/workflows/test.yml) runs on branch pushes, pull requests and manual dispatch
 using Ubuntu 24.04, macOS 15 and Windows Server 2022. Each native runner builds all
-binaries and examples, runs the complete Cargo test collection (including the E2E
-bridge), discovers all Python `*_test.py` tests, and runs formatting and Clippy.
+binaries and examples, runs the complete native and Python test collections and
+readable E2E under one process budget, and runs formatting and Clippy.
 Platform-specific syscall and signal fixtures declare their actual applicability;
 the shared native portability suite runs on all three systems.
 
@@ -59,13 +70,20 @@ Each scope must pass separately. Adding test source to a report cannot increase 
 The Python tool lives in `.source-down/coverage-env`, separate from the project's runtime plugin environment.
 
 [test.py](../../tools/test.py) obtains instrumentation settings from `cargo llvm-cov show-env`, builds the CLI and spec plugin,
-and runs Cargo tests. Real CLI and Rust plugin subprocesses inherit the profile destination;
-the explicit Cargo `e2e` target runs the same readable scenarios once against the instrumented CLI.
+and compiles Cargo's discovered test artifacts. The common scheduler runs every
+listed native Rust test, Rust doctests, discovered Python tool tests and readable
+E2E modules. Independent Python methods get separate processes; class/module
+fixtures keep their shared lifecycle. Real CLI and Rust plugin subprocesses inherit
+the profile destination. The same E2E coordinator runs once against the instrumented CLI;
+direct `cargo test` reaches it through the explicit `e2e` bridge.
 Its coordinator records the exact executable hashes and inherited profile destinations.
 The Python tool suite uses `*_test.py`, which does not rediscover E2E `test_*.py` files.
-E2E reading generation is omitted from this bridge and requested separately by `mise run acceptance`.
+E2E reading is requested by `test --review` or the standalone `mise run acceptance`.
 Python tests execute the metadata plugin through its actual stdin/stdout protocol; coverage.py's subprocess patch collects those child processes.
 The compiler wrapper is tested by compiling and running a Rust probe and verifying its emitted profile.
+Each invocation also saves `.source-down/test-runs/<run-id>/results.json` and raw
+job logs, including failures and jobs that did not start. Test failure retains the
+current evidence and prevents a passing coverage result.
 
 A lock serializes coverage runs in the same checkout. Before each run, `cargo llvm-cov clean --workspace` clears workspace profiles and build artifacts;
 dependency caches remain reusable. Python profiles and generated reports are recreated. Old test executions therefore cannot fill gaps in the current run.

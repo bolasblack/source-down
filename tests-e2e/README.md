@@ -6,6 +6,7 @@ separates the reading collection from retained native evidence and pending migra
 
 ```sh
 mise run acceptance
+mise run acceptance -- --jobs 4
 mise exec -- python tools/acceptance.py --list
 mise exec -- python tools/acceptance.py --case search --review
 mise exec -- python tools/acceptance.py --case read/test_current_entity.py
@@ -16,8 +17,15 @@ The coordinator prints absolute paths for its own `results.json` and reading ent
 Each run has a unique directory under `.source-down/e2e/runs/`; there is no mutable
 latest-success page. A filtered run is partial and listing executes no tests. Inspect
 test status separately from documentation status. A failed run retains its results
-and command logs. `mise run test` invokes this same collection once through Cargo's
-`bridge.rs`, without rendering it; Python tool tests use the separate `*_test.py` pattern.
+and command logs. `mise run test` runs these modules alongside native Rust and Python
+tool tests under one shared worker limit. Add `-- --review` to render reading from
+that same execution. Direct `cargo test` reaches this coordinator through `bridge.rs`.
+Python tool tests use the separate `*_test.py` pattern.
+
+Independent scenario modules run in separate processes. The default worker limit is
+the available CPU count; `--jobs N` or `SD_TEST_JOBS=N` overrides it. `--jobs 1` keeps
+ordered execution for diagnosis. Operations and fixtures within a module retain
+their order. The coordinator prints completed cases and timings while tests run.
 
 One `cases/<workflow>/test_*.py` file describes one user scenario. Use ordinary
 `unittest` assertions, a one-line test docstring for its title, complete owning clause

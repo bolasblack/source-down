@@ -4,7 +4,7 @@ description: "test 统一执行全部测试、报告和三个独立的 90% 行�
 tags: conformance, tooling
 updates: AGD-005, AGD-007
 related: AGD-001, AGD-002
-updated_by: AGD-010
+updated_by: AGD-010, AGD-018
 ---
 
 ## Context

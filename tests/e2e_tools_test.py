@@ -33,13 +33,13 @@ class E2EToolsFixture(unittest.TestCase):
             (parent / "__init__.py").touch()
         path.write_text(content, encoding="utf-8")
 
-    def run_acceptance(self, *arguments):
+    def run_acceptance(self, *arguments, text=False):
         target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
         binary = target / "debug" / ("source-down.exe" if os.name == "nt" else "source-down")
         before = set((self.root / ".source-down/e2e/runs").glob("*/results.json"))
         result = subprocess.run([sys.executable, str(self.root / "tools/acceptance.py"),
                                  "--binary", str(binary), *arguments],
-                                capture_output=True, timeout=60)
+                                capture_output=True, timeout=60, text=text, encoding="utf-8" if text else None)
         self.last_results = set((self.root / ".source-down/e2e/runs").glob("*/results.json")) - before
         return result
 

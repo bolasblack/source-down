@@ -8,6 +8,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+from test_jobs import add_jobs_argument
+from test_suite import run_suite
 
 ROOT = Path(__file__).resolve().parents[1]
 MINIMUM = 90
@@ -85,7 +87,7 @@ def run(command, env, capture=False):
                           stdout=subprocess.PIPE if capture else None)
 
 
-def measure(output):
+def measure(output, jobs, *, review=False):
     env = dict(os.environ, CARGO_TARGET_DIR=str(ROOT / "target/coverage"))
     settings = run(["cargo", "llvm-cov", "show-env"], env, capture=True).stdout
     for line in settings.splitlines():
@@ -100,13 +102,12 @@ def measure(output):
         shutil.rmtree(output)
     output.mkdir(parents=True)
     env.update(SD_COVERAGE_ROOT=str(ROOT), SD_COVERAGE_DATA=str(output / "python"))
-    run(["cargo", "build", "--locked", "--bins", "--examples"], env)
-    run(["cargo", "test", "--locked"], env)
-
     python = ROOT / ".source-down/coverage-env/bin/python"
     coverage = [str(python), "-m", "coverage"]
     config = f"--rcfile={ROOT / 'tools/coverage.toml'}"
-    run(coverage + ["run", config, "-m", "unittest", "discover", "-s", "tests", "-p", "*_test.py"], env)
+    result = run_suite(env, jobs, review=review, python_prefix=coverage + ["run", config])
+    if result:
+        return result
     run(coverage + ["combine", config], env)
     run(coverage + ["json", config, "-o", str(output / "python.json")], env)
     run(coverage + ["html", config, "-d", str(output / "python-html")], env)
@@ -115,16 +116,30 @@ def measure(output):
     run(rust + ["--html", "--output-dir", str(output / "rust")], env)
     check_reports(output)
     print(f"Coverage reports: {output}", flush=True)
+    return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check-only", type=Path, metavar="REPORT_DIRECTORY",
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check-only", type=Path, metavar="REPORT_DIRECTORY",
                         help="check existing rust.json and python.json without collecting samples")
+    mode.add_argument("--no-coverage", action="store_true", help="run every collection without instrumentation")
+    mode.add_argument("--artifact", type=Path, help="test this exact artifact with E2E and native portability, without building")
+    parser.add_argument("--spec-plugin", type=Path, help="project plugin supplied with --artifact")
+    parser.add_argument("--review", action="store_true", help="publish reading material from this same E2E execution")
+    add_jobs_argument(parser)
     arguments = parser.parse_args()
+    if arguments.spec_plugin is not None and arguments.artifact is None:
+        parser.error("--spec-plugin requires --artifact")
     try:
         if arguments.check_only is not None:
             check_reports(arguments.check_only)
+        elif arguments.no_coverage:
+            return run_suite(dict(os.environ), arguments.jobs, review=arguments.review)
+        elif arguments.artifact:
+            return run_suite(dict(os.environ), arguments.jobs, review=arguments.review,
+                             artifact=arguments.artifact, spec_plugin=arguments.spec_plugin)
         else:
             import fcntl
 
@@ -132,7 +147,7 @@ def main():
             state.mkdir(exist_ok=True)
             with (state / "coverage.lock").open("w") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX)
-                measure(state / "coverage")
+                return measure(state / "coverage", arguments.jobs, review=arguments.review)
     except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         print(f"coverage: {error}", file=sys.stderr)
         return 1

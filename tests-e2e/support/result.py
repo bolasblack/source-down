@@ -11,13 +11,14 @@ def now():
 
 
 class Result(unittest.TestResult):
-    def __init__(self, cases, run, context):
+    def __init__(self, cases, run, context, *, checkpoint=lambda: None):
         super().__init__()
         self.cases = {case["id"]: case for case in cases}
         self.run = run
         self.context = context
         self.current_test = None
         self.events = []
+        self.checkpoint = checkpoint
         (run / "logs").mkdir(exist_ok=True)
 
     def startTest(self, test):
@@ -25,6 +26,7 @@ class Result(unittest.TestResult):
         self.context.active_case = test.id()
         self.current_test = test
         self.cases[test.id()]["started_at"] = now()
+        self.checkpoint()
 
     def stopTest(self, test):
         if self.cases[test.id()]["status"] == "not_run":
@@ -36,6 +38,7 @@ class Result(unittest.TestResult):
         self.context.active_case = None
         self.current_test = None
         print(f"{test.id()}: {self.cases[test.id()]['status']}", flush=True)
+        self.checkpoint()
         super().stopTest(test)
 
     def addSuccess(self, test):

@@ -48,7 +48,7 @@ jobs:
           python3 .github/release/check.py --tagged --tag-prefix v --version-file Cargo.toml "$TAG"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Full development acceptance
-        run: mise run check && mise run review && mise run acceptance && mise run benchmark
+        run: mise run lint && mise run test -- --review && mise run review && mise run benchmark
 
   build:
     needs: verify

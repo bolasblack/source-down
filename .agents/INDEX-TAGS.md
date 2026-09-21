@@ -19,3 +19,4 @@ decisions/AGD-013_readable-e2e-with-one-execution-owner.md: #conformance, #self-
 decisions/AGD-014_use-native-notifications-with-explicit-content-polling.md: #architecture, #tooling, #conformance
 decisions/AGD-015_assemble-review-packets-through-the-public-cli.md: #conformance, #tooling
 decisions/AGD-016_keep-alignment-runs-outside-the-project.md: #tooling, #conformance
+decisions/AGD-018_parallelize-independent-tests-under-one-budget.md: #architecture, #conformance, #tooling

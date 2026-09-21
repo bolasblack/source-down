@@ -1,11 +1,12 @@
 # 由真实 CLI 发现指令，固定插件只记录 wire 并实现 note 的项目私有参数规则。
 # {% include "tests-e2e/fixtures/render/example_notes.py" %}
 import json
+from pathlib import Path
 from support import E2ECase
 
 
 class ProtocolRequests(E2ECase):
-    specs = ("SPEC-PLG-002", "SPEC-PLG-009", "SPEC-PLG-010", "SPEC-PLG-003")
+    specs = ("SPEC-PLG-002", "SPEC-PLG-009", "SPEC-PLG-010", "SPEC-PLG-003", "SPEC-PLG-005")
 
     def test_scenario(self):
         """单个 hello、三文件四请求、结构化拒绝和零请求检查都遵循同一真实协议"""
@@ -19,8 +20,13 @@ class ProtocolRequests(E2ECase):
             project.sourceDown.renderSuccessfully(inputs=["src/example.rs"])
             wire = [json.loads(line) for line in project.readBytes("wire.jsonl").splitlines()]
             self.assertEqual([message["type"] for message in wire], ["initialize", "ready", "run", "result"])
-            self.assertEqual(wire[0], {"type": "initialize", "protocol_version": 1, "plugin": "example",
-                                       "project_root": str(project.root), "options": {}})
+            initialize = wire[0].copy()
+            # 绝对根路径按实际目录身份核对，允许平台规范化临时目录的路径写法。
+            initialized_root = Path(initialize.pop("project_root"))
+            self.assertTrue(initialized_root.is_absolute(), initialized_root)
+            self.assertTrue(initialized_root.samefile(project.root), initialized_root)
+            self.assertEqual(initialize, {"type": "initialize", "protocol_version": 1,
+                                          "plugin": "example", "options": {}})
             request = {"id": "d1", "directive": "note", "arguments": {"positional": ["hello"], "named": {}},
                        "source": {"path": "src/example.rs", "start_byte": 3, "end_byte": 21,
                                   "start_line": 1, "end_line": 1}}

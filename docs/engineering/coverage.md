@@ -14,12 +14,15 @@ mise shares the same test task when these entry points are requested together.
 
 ## Continuous integration
 
-The [test workflow](../../.github/workflows/test.yml) runs on pushes, pull requests and manual dispatch
+The [test workflow](../../.github/workflows/test.yml) runs on branch pushes, pull requests and manual dispatch
 using Ubuntu 24.04, macOS 15 and Windows Server 2022. Each native runner builds all
 binaries and examples, runs the complete Cargo test collection (including the E2E
 bridge), discovers all Python `*_test.py` tests, and runs formatting and Clippy.
 Platform-specific syscall and signal fixtures declare their actual applicability;
 the shared native portability suite runs on all three systems.
+
+Release-tag pushes trigger [draft-release](../../.github/workflows/draft-release.yml),
+which runs full development acceptance and verifies the native release artifacts.
 
 Linux also runs the existing `mise run test` coverage gates, documentation lint,
 review and benchmark tasks. macOS and Windows run the same Cargo and Python test

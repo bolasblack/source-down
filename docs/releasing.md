@@ -66,6 +66,15 @@ nested Unicode paths, hard-link protection, process-tree cleanup, close deadline
 pending writes and cancellation under blocked stdout. The preflight
 `test --review` publishes reading from the instrumented test execution. Extracted
 artifacts and relocated source still require their own acceptance evidence.
+
+Preload fault scenarios declare their dynamic-loader requirement. The acceptance
+coordinator inspects the extracted ELF itself and records them as inapplicable
+for static artifacts; GNU verification executes these scenarios. The remaining
+functional and native portability scenarios continue to run against the exact
+musl executable. Fixture shared libraries are compiled for the host interpreter,
+independently of `SD_RELEASE_TARGET`. Every native release job retains its test
+and E2E reports as `release-test-evidence-<target>`, including on failure.
+
 The reusable [verification workflow](../.github/workflows/verify.yml) owns Linux
 lint, coverage/E2E reading, project review and exclusive benchmark gates as separate
 steps. Its source identity job resolves one commit for the verification and

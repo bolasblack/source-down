@@ -9,6 +9,7 @@ from support import E2ECase
 class NotificationErrorPublication(E2ECase):
     specs = ("SPEC-CLI-009", "SPEC-CLI-010", "SPEC-CLI-012", "SPEC-SRH-003")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """发布中通知读取 EIO 后保留旧索引，恢复时清理所有已取得 ownership 的页面"""

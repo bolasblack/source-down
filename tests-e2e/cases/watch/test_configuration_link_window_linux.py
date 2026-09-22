@@ -8,6 +8,7 @@ from support import E2ECase
 class LinkedConfigurationReadWindow(E2ECase):
     specs = ("SPEC-CLI-008", "SPEC-CLI-010", "SPEC-CLI-011")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """配置链接在读取时临时指向同字节硬链接，恢复原链后仍重建 Session"""

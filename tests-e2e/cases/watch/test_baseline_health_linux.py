@@ -7,6 +7,7 @@ from support import E2ECase
 class BaselineHealth(E2ECase):
     specs = ("SPEC-CLI-008", "SPEC-CLI-010", "SPEC-CLI-011", "SPEC-PLG-008")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """baseline 读取中插件退出，故障被回收且旧索引保持，修复后恢复"""

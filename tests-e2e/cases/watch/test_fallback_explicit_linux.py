@@ -6,6 +6,7 @@ from support import E2ECase
 class ExplicitPolling(E2ECase):
     specs = ("SPEC-CLI-008", "SPEC-CLI-009", "SPEC-CLI-010")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """显式轮询从不调用真实原生初始化，且正文修改继续发布"""

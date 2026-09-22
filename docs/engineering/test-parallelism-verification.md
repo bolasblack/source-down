@@ -403,3 +403,57 @@ checks passed; complete project review published 277 pages. Linux GNU release
 verification passed extracted-artifact tests and relocated-source rebuild in
 66.29 seconds, retaining the latter's E2E evidence at
 `.source-down/e2e/runs/20260922T080435-58b24e962e2a/results.json`.
+
+## Static release artifact follow-up
+
+The [draft-release run on `151f7fc`](https://github.com/bolasblack/source-down/actions/runs/35705794077)
+passed preflight, GNU, macOS and Windows jobs. Both musl targets had 17 assertion
+failures and two execution errors in preload fault scenarios. The retained
+workflow log showed host Python loading a musl fixture library and rejecting the
+host's `libc.so` linker script as an invalid ELF file.
+
+Two independent controls established the boundaries. A GNU artifact with the
+musl release environment failed with that loader error; restoring the host
+environment passed. The actual static musl artifact still failed the fallback
+assertion with a correct host library because its inotify call was never
+interposed. Single-worker execution reproduced both problems.
+
+The coordinator and release inspector now share one ELF reader. Twenty preload
+scenarios declare their requirement, and applicability follows the supplied
+artifact's interpreter header. Static runs preserve explicit inapplicability
+reasons; GNU runs execute these same scenarios. The fixture compiler selects the
+host independently of the inherited release target. A real dynamic/static C
+regression uses misleading filenames, the musl release environment, host Python
+and actual inotify interception; it changed from two failures to success.
+An undeclared preload fixture fails explicitly. Ordinary skips and unrecognized
+linking facts continue to fail acceptance. Static fault injection itself remains
+unverified by these preload scenarios.
+
+Validation retained under `.source-down/test-runtime/draft-release-35705794077/`:
+
+- `regression-red.log` and `regression-green.log` preserve the real loader regression.
+- Native x86-64 musl packaging passed in 13.32 seconds, with 117 E2E scenarios
+  passed, 20 explicitly inapplicable and all command cleanups complete:
+  `.source-down/e2e/runs/20260922T090806-0e9ca170ea9f/results.json`.
+- The full coverage gate passed 482 jobs, including all 137 GNU E2E scenarios
+  and all 20 preload scenarios:
+  `.source-down/test-runs/20260922T091001-5297e7c39d8b/results.json`.
+  Rust core, Rust spec-plugin and Python project-plugin coverage remained
+  95.21%, 96.43% and 94.17%. This gate used six workers while GNU release
+  verification used the other six, taking 104.91 and 101.21 seconds respectively.
+- GNU extracted-artifact and relocated-source acceptance each passed all 137
+  scenarios with complete cleanup:
+  `.source-down/e2e/runs/20260922T091011-0430e7b83e8a/results.json` and
+  `.source-down/e2e/runs/20260922T091104-6ac557fee458/results.json`.
+
+Native release jobs now retain their structured test results and raw E2E logs
+even on failure, under names outside the release-asset download pattern.
+These local results cover native x86-64 execution. ARM64 musl execution still
+requires the subsequent native release workflow.
+
+An additional alignment status check reported 16 stale clauses in the existing
+`20260921T100053Z` review round. Recomputing baseline fingerprints with the
+unchanged scenario bodies established the same 16 stale clauses before this fix;
+the new preload declarations change eight of their fingerprints. This is
+outstanding semantic review, with no verdicts changed or inferred from passing
+tests. `alignment-status.json` in the evidence directory records the comparison.

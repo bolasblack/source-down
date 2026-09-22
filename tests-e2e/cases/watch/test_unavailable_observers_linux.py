@@ -6,6 +6,7 @@ from support import E2ECase
 class UnavailableObservers(E2ECase):
     specs = ("SPEC-CLI-008",)
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """两种观察方式都无法覆盖 root 时退出 1，未启动业务轮次或改变产物"""

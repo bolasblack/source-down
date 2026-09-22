@@ -7,6 +7,7 @@ from support import E2ECase
 class CleanupWindow(E2ECase):
     specs = ("SPEC-CLI-009", "SPEC-CLI-010", "SPEC-PLG-008")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """报告所引 target/material.md 在清理期间补齐后首次发布恢复"""

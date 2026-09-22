@@ -6,6 +6,7 @@ from support import E2ECase
 class PublicationCancellation(E2ECase):
     specs = ("SPEC-CLI-004", "SPEC-CLI-008", "SPEC-CLI-012", "SPEC-SRH-003")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """发布到部分页面时收到真实中断，保留完成范围与旧索引并退出 130"""

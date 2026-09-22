@@ -7,6 +7,7 @@ from support import E2ECase
 class BaselineCancellation(E2ECase):
     specs = ("SPEC-CLI-008", "SPEC-CLI-010", "SPEC-CLI-011", "SPEC-PLG-008")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """baseline 读取窗口中的取消在释放后退出 130 并回收插件"""

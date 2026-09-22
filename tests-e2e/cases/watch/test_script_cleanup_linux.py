@@ -9,6 +9,7 @@ from support import E2ECase
 class ScriptCleanup(E2ECase):
     specs = ("SPEC-CLI-009", "SPEC-CLI-010", "SPEC-CLI-011", "SPEC-PLG-008")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """清理暂停时修复普通未知脚本或 target 内显式程序，释放后无需再次编辑即可恢复"""

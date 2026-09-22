@@ -13,6 +13,7 @@ import traceback
 import unittest
 import uuid
 from test_jobs import Job, add_jobs_argument, print_failure, run_jobs
+from elf import linking as elf_linking
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,7 +33,7 @@ def source_hashes(run):
             if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"}
 
 
-def discover(run, selector):
+def discover(run, selector, binary_linking=None):
     loader = unittest.TestLoader()
     tests = list(flatten(loader.discover(str(run / "tests-e2e/cases"), pattern="test_*.py",
                                         top_level_dir=str(run / "tests-e2e"))))
@@ -50,11 +51,20 @@ def discover(run, selector):
         selected = selector is None or name == selector or name.startswith(selector.rstrip("/") + "/")
         platforms = getattr(test, "platforms", (sys.platform,))
         applicable = sys.platform in platforms
+        requires_preload = getattr(test, "requires_ld_preload", False)
+        reason = None if applicable else f"not applicable on {sys.platform}; requires {', '.join(platforms)}"
+        if applicable and requires_preload:
+            if binary_linking is None:
+                errors.append(f"cannot establish ELF linking for LD_PRELOAD case: {test.id()}")
+            elif binary_linking["interpreter"] is None:
+                applicable = False
+                reason = "static ELF artifact has no dynamic interpreter; this fixture requires LD_PRELOAD"
         if not applicable:
-            unittest.skip(f"not applicable on {sys.platform}; requires {', '.join(platforms)}")(type(test))
+            unittest.skip(reason)(type(test))
         cases.append({"id": test.id(), "title": test.shortDescription() or test.id(),
                       "source": source, "specs": list(getattr(test, "specs", ())),
                       "applicable": applicable, "platforms": list(platforms),
+                      "requires_ld_preload": requires_preload, "reason": reason,
                       "selected": selected, "status": "not_run", "started_at": None, "ended_at": None})
     if not tests:
         errors.append("no scenarios discovered")
@@ -113,7 +123,8 @@ class AcceptanceRun:
                     report[label] = {"path": str(path), "sha256": None, "error": str(error)}
                     if not listing:
                         report["errors"].append(str(error))
-            _, report["cases"], errors = discover(run, selector)
+            report["binary_linking"] = elf_linking(context.binary) if context.binary.is_file() else None
+            _, report["cases"], errors = discover(run, selector, report["binary_linking"])
             report["errors"].extend(errors)
         except KeyboardInterrupt:
             report["interrupted"] = True

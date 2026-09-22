@@ -17,8 +17,10 @@ import zipfile
 
 try:
     from .build import environment, host_target
+    from .elf import linking as elf_linking
 except ImportError:  # Direct script entry point.
     from build import environment, host_target
+    from elf import linking as elf_linking
 
 ROOT = Path(__file__).resolve().parents[1]
 MEMBERS = ("Cargo.toml", "Cargo.lock", ".mise.toml", "source-down.toml",
@@ -74,25 +76,17 @@ def extract_files(path, destination):
 
 def inspect_binary(binary, target):
     """Verify the architecture and require a self-contained musl executable."""
-    data = binary.read_bytes()
     if "-linux-" in target:
-        if data[:6] != b"\x7fELF\x02\x01":
+        facts = elf_linking(binary)
+        if facts is None:
             raise ValueError("release binary must be little-endian ELF64")
-        machine = struct.unpack_from("<H", data, 18)[0]
-        if machine != (62 if target.startswith("x86_64-") else 183):
+        if facts["machine"] != (62 if target.startswith("x86_64-") else 183):
             raise ValueError("ELF architecture differs from the release target")
-        offset = struct.unpack_from("<Q", data, 32)[0]
-        size, count = struct.unpack_from("<HH", data, 54)
-        interpreter, needed = None, False
-        for number in range(count):
-            kind, _, start, _, _, length, _, _ = struct.unpack_from("<IIQQQQQQ", data, offset + number * size)
-            if kind == 3:
-                interpreter = data[start:start + length].rstrip(b"\0").decode()
-            elif kind == 2:
-                needed |= any(struct.unpack_from("<q", data, at)[0] == 1 for at in range(start, start + length, 16))
+        interpreter, needed = facts["interpreter"], facts["shared_library_dependencies"]
         if target.endswith("-musl") and (interpreter is not None or needed):
             raise ValueError("musl release binary must have no interpreter or shared-library dependencies")
         return {"interpreter": interpreter, "shared_library_dependencies": needed}
+    data = binary.read_bytes()
     if target == "aarch64-apple-darwin":
         if data[:8] != struct.pack("<II", 0xFEEDFACF, 0x0100000C):
             raise ValueError("release binary must be an ARM64 Mach-O executable")

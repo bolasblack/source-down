@@ -296,8 +296,14 @@ start/end times, command/log records, subtests and one of `passed`, `failed`, `e
 outcomes. Worker loss records an execution error for started, unfinished cases;
 cases that never started retain `not_run`. An
 ordinary skip or expected failure cannot establish full acceptance. A case's explicit
-`platforms` declaration may identify a platform-inapplicable skip with its reason;
-the report retains it and names the platform actually exercised. Full success
+`platforms` declaration may identify a platform-inapplicable skip with its reason.
+Cases using native preload fixtures declare `requires_ld_preload = True`. The
+coordinator reads the actual ELF program headers: an executable without an
+interpreter cannot run those fixtures. Such cases are explicitly inapplicable
+for that artifact, with their requirement and reason retained in the report;
+GNU runs still execute them. Artifact paths and release-target environment
+variables do not determine applicability. Native fixture libraries use the host
+toolchain, independently of the artifact's release target. Full success
 requires every selected applicable case to execute and pass, and a nonempty executed
 set. Listing and partial success never claim full-suite success.
 

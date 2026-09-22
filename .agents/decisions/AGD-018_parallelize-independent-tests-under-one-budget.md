@@ -80,6 +80,13 @@ Windows 还暴露了异步终止与文件系统清理之间的竞态：关闭 Jo
 组仍存在或查询失败时保留原始权限错误，不以子进程退出代替后代清理，也不增加业务重试。
 真实子进程的退出与存活两种故障注入分别验证这一区别。一次原生全绿不代替时序边界的回归证据。
 
+发行物验收还需区分宿主平台和实际产物的链接能力。依赖 LD_PRELOAD 的场景明确声明
+这一条件，由协调器读取被测 ELF 的解释器头判断适用性；静态产物记录不适用及原因，
+GNU 产物继续执行全部注入场景。共享夹具按宿主工具链构建，发行目标环境变量不能
+把宿主解释器加载的库切换为其他 ABI。每份报告只归属实际执行的产物及适用场景，
+任意 skip 和无法识别的链接事实仍不能成为通过证据。若需静态产物的相同故障窗口
+证据，应采用可作用于静态程序的原生注入方法；这项后续工作尚未采用。
+
 首次依赖编译承担优化成本，之后复用 Cargo 缓存。CI 按主机、编译器、依赖清单
 及固定工具链/编译包装器保存依赖构建与下载缓存；不保存工作区程序、测试结果或
 覆盖率采样。即使测试失败，依赖仍可缓存；每轮测试及门槛始终重跑。
@@ -94,3 +101,4 @@ Windows 还暴露了异步终止与文件系统清理之间的竞态：关闭 Jo
 - [Windows job accounting](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_accounting_information)
 - [Windows process termination and waits](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)
 - [Darwin process-group signal filtering](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c)
+- [Linux dynamic loader and LD_PRELOAD](https://man7.org/linux/man-pages/man8/ld.so.8.html)

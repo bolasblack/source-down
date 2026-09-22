@@ -33,13 +33,13 @@ class E2EToolsFixture(unittest.TestCase):
             (parent / "__init__.py").touch()
         path.write_text(content, encoding="utf-8")
 
-    def run_acceptance(self, *arguments, text=False):
+    def run_acceptance(self, *arguments, text=False, env=None):
         target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
         binary = target / "debug" / ("source-down.exe" if os.name == "nt" else "source-down")
         before = set((self.root / ".source-down/e2e/runs").glob("*/results.json"))
         result = subprocess.run([sys.executable, str(self.root / "tools/acceptance.py"),
                                  "--binary", str(binary), *arguments],
-                                capture_output=True, timeout=60, text=text, encoding="utf-8" if text else None)
+                                capture_output=True, timeout=60, text=text, encoding="utf-8" if text else None, env=env)
         self.last_results = set((self.root / ".source-down/e2e/runs").glob("*/results.json")) - before
         return result
 
@@ -50,6 +50,58 @@ class E2EToolsFixture(unittest.TestCase):
 
 
 class E2EToolsTest(E2EToolsFixture):
+    @unittest.skipUnless(sys.platform == "linux", "ELF preload fixtures")
+    def test_preload_requirements_follow_actual_linking_and_keep_host_helpers_native(self):
+        from tools.build import host_target
+        host = host_target()
+        static_target = host.removesuffix("-gnu") + "-musl"
+        source = self.root / "probe.c"
+        source.write_text('#include <stdio.h>\n#include <sys/inotify.h>\n#include <unistd.h>\n'
+                          'int main(void) { int fd=inotify_init1(0); if(fd<0) puts("injected"); '
+                          'else { close(fd); puts("ordinary"); } return 0; }\n')
+        self.case("test_artifact.py", '''import sys
+from support import E2ECase
+class Ordinary(E2ECase):
+    def test_scenario(self):
+        result = self.context.command([self.context.binary], cwd=self.context.repository)
+        self.assertRunResult(result, exitCode=0, stdout=b"ordinary\\n")
+class Preloaded(E2ECase):
+    platforms = ("linux",)
+    requires_ld_preload = True
+    def test_scenario(self):
+        with self.notificationInitializationFault() as fault:
+            env = fault.environment(record=fault.root / "calls")
+            host = self.context.command([sys.executable, "-c", "print('host ready')"], cwd=fault.root, env=env)
+            self.assertRunResult(host, exitCode=0, stdout=b"host ready\\n")
+            result = self.context.command([self.context.binary], cwd=fault.root, env=env)
+            self.assertRunResult(result, exitCode=0, stdout=b"injected\\n")
+            self.assertEqual((fault.root / "calls").read_bytes(), b"init\\n")
+''')
+        # Misleading filenames and an inherited release target must not select cases.
+        for target, name, flags, statuses in (
+            (host, "named-musl", [], ["passed", "passed"]),
+            (static_target, "named-gnu", ["-static"], ["passed", "skipped"]),
+        ):
+            with self.subTest(target=target):
+                binary = self.root / name
+                compiled = subprocess.run([sys.executable, ROOT / "tools/build.py", "--target", target, "--",
+                                           ROOT / "tools/cc", source, "-o", binary, *flags],
+                                          capture_output=True, timeout=60)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                result = self.run_acceptance("--binary", str(binary), "--spec-plugin", sys.executable,
+                                             env=dict(os.environ, SD_RELEASE_TARGET=static_target))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                report, _ = self.results()
+                self.assertTrue(report["full_pass"])
+                self.assertEqual([case["status"] for case in report["cases"]], statuses)
+                self.assertEqual(bool(report["binary_linking"]["interpreter"]), target == host)
+                if target != host:
+                    skipped = report["cases"][1]
+                    self.assertFalse(skipped["applicable"])
+                    self.assertTrue(skipped["requires_ld_preload"])
+                    self.assertIn("LD_PRELOAD", skipped["reason"])
+                    self.assertIn("static", skipped["reason"])
+
     def test_listing_discovers_the_saved_cases_without_executing_them(self):
         self.case("render/test_listed.py", '''import unittest
 class Listed(unittest.TestCase):

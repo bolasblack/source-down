@@ -7,6 +7,7 @@ from support import E2ECase
 class BlockedCleanup(E2ECase):
     specs = ("SPEC-CLI-010", "SPEC-CLI-012", "SPEC-PLG-008")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """发布阻断先建立原生覆盖，清理期间一次修复即可发布"""

@@ -73,6 +73,17 @@ jobs:
         run: rustup target add "$SD_RELEASE_TARGET"
       - name: Build, archive and run the extracted artifact
         run: mise run release
+      - name: Retain native verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-test-evidence-${{ matrix.target }}
+          path: |
+            .source-down/test-runs/
+            .source-down/e2e/runs/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: native-${{ matrix.target }}

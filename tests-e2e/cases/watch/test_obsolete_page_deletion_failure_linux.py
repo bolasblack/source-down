@@ -6,6 +6,7 @@ from support import E2ECase
 class ObsoletePageDeletionFailure(E2ECase):
     specs = ("SPEC-CLI-004", "SPEC-CLI-008", "SPEC-CLI-012", "SPEC-SRH-003")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """旧页删除失败保留已完成范围，释放故障后准确清理并更新索引"""

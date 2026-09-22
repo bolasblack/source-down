@@ -6,6 +6,7 @@ from support import E2ECase
 class IndexPublicationFailure(E2ECase):
     specs = ("SPEC-CLI-004", "SPEC-CLI-008", "SPEC-CLI-012", "SPEC-SRH-003")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """索引发布失败明确报告页面完成，释放故障后清理并更新索引"""

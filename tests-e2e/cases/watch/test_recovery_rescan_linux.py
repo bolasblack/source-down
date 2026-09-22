@@ -7,6 +7,7 @@ from support import E2ECase
 class RecoveryRescan(E2ECase):
     specs = ("SPEC-CLI-010",)
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """未知恢复范围失去覆盖只安排一次明确发现尝试，不伪装成已证实内容变化"""

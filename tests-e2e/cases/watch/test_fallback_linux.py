@@ -6,6 +6,7 @@ from support import E2ECase
 class NativeFallback(E2ECase):
     specs = ("SPEC-CLI-008", "SPEC-CLI-009", "SPEC-CLI-010")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """原生通知初始化资源耗尽时说明原因，切换一次轮询并持续更新"""

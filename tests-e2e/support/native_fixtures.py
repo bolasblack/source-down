@@ -12,11 +12,16 @@ from .watch import Watch
 
 
 def _compile(case, project, source, library):
+    if not getattr(case, "requires_ld_preload", False):
+        raise ValueError("native preload cases must declare requires_ld_preload = True")
+    # These libraries are loaded by host processes, including fixture interpreters.
+    environment = dict(os.environ if case.context.environment is None else case.context.environment)
+    environment.pop("SD_RELEASE_TARGET", None)
     result = case.context.command([
         sys.executable, case.context.repository / "tools/build.py", "--",
         case.context.repository / "tools/cc", "-shared", "-fPIC", project.root / source,
         "-o", project.root / library, "-ldl",
-    ], cwd=project.root, timeout=60)
+    ], cwd=project.root, timeout=60, env=environment)
     _checkRunResult(result, exitCode=0)
     return project.root / library
 

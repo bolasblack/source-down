@@ -6,6 +6,7 @@ from support import E2ECase
 class FallbackCancellation(E2ECase):
     specs = ("SPEC-CLI-008", "SPEC-CLI-009", "SPEC-CLI-010")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """通知初始化阻塞窗口中取消，返回 EMFILE 后退出 130 且没有发布"""

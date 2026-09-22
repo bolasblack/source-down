@@ -9,6 +9,7 @@ from support import E2ECase
 class ProcessGroupCleanup(E2ECase):
     specs = ("SPEC-PLG-008", "SPEC-CLI-008", "SPEC-CLI-011")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """回收后已消失的进程组不报清理失败，仍存活且无法终止的插件必须报错退出"""

@@ -10,6 +10,7 @@ from support import E2ECase
 class NotificationRescanPublication(E2ECase):
     specs = ("SPEC-CLI-009", "SPEC-CLI-010", "SPEC-CLI-012", "SPEC-SRH-003")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """发布中的通知 Rescan 完成页面和索引，静止后不再重复执行插件"""

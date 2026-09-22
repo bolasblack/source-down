@@ -38,7 +38,7 @@ def main():
             suite = loader.loadTestsFromName(case["id"])
             if not case["applicable"]:
                 for test in suite:
-                    unittest.skip(f"not applicable on {sys.platform}; requires {', '.join(case['platforms'])}")(type(test))
+                    unittest.skip(case["reason"])(type(test))
             tests.append(suite)
         if loader.errors:
             raise RuntimeError("\n".join(loader.errors))

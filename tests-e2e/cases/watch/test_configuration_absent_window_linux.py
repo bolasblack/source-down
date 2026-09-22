@@ -8,6 +8,7 @@ from support import E2ECase
 class AbsentConfigurationReadWindow(E2ECase):
     specs = ("SPEC-CLI-008", "SPEC-CLI-010", "SPEC-CLI-011")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """默认配置在 Session 加载时暂缺，原文件恢复后重载并发布正确插件结果"""

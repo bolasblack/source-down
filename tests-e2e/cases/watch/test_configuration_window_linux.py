@@ -8,6 +8,7 @@ from support import E2ECase
 class ConfigurationReadWindow(E2ECase):
     specs = ("SPEC-CLI-008", "SPEC-CLI-010", "SPEC-CLI-011")
     platforms = ("linux",)
+    requires_ld_preload = True
 
     def test_scenario(self):
         """配置 A→B→A 的真实读取窗口结束后，重建 Session 并发布 A，空闲不重复执行"""

@@ -183,6 +183,16 @@ class NativeAssertions:
         yield CleanupWindow(project, _compile(self, project, source, library))
 
     @contextmanager
+    def processGroupCleanupFault(self, project, *, mode):
+        if mode not in ("exited", "live"):
+            raise ValueError("process cleanup fixture supports exited/live")
+        project.makeDirectory(".source-down")
+        with self.project({"fault.c": self.fixture("watch/process_group_cleanup.c")}) as fixture:
+            library = _compile(self, fixture, "fault.c", "fault.so")
+            yield dict(os.environ, LD_PRELOAD=str(library),
+                       SD_CLEANUP_FAULT_ROOT=str(project.root), SD_CLEANUP_FAULT_MODE=mode)
+
+    @contextmanager
     def notificationPublicationFault(self, project, *, mode):
         """Inject while checking pages/docs/z.md.md after pages/docs/a.md.md appears."""
         if mode not in ("error", "rescan"):

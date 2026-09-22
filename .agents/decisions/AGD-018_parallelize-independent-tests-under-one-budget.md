@@ -74,6 +74,11 @@ Windows 还暴露了异步终止与文件系统清理之间的竞态：关闭 Jo
 进程句柄，终止后等待句柄表示退出，再确认任务已空并释放句柄；
 不通过重试删除目录来掩盖未完成的进程清理。原生解释器 fixture 的启动成本也需
 纳入配置期限，同时保留具体阻塞阶段、上限与退出证据。
+后续原生运行仍暴露两类时序假设：页面替换和旧页删除并不表示最终索引已发布，
+编辑后的查询须以本轮成功发布为边界；macOS 对只剩僵尸进程的组可能返回权限错误。
+进程 owner 回收直接子进程后，仅在确认整个组已不存在时接受清理完成；
+组仍存在或查询失败时保留原始权限错误，不以子进程退出代替后代清理，也不增加业务重试。
+真实子进程的退出与存活两种故障注入分别验证这一区别。一次原生全绿不代替时序边界的回归证据。
 
 首次依赖编译承担优化成本，之后复用 Cargo 缓存。CI 按主机、编译器、依赖清单
 及固定工具链/编译包装器保存依赖构建与下载缓存；不保存工作区程序、测试结果或
@@ -88,3 +93,4 @@ Windows 还暴露了异步终止与文件系统清理之间的竞态：关闭 Jo
 - [Windows job termination](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-terminatejobobject)
 - [Windows job accounting](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_accounting_information)
 - [Windows process termination and waits](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)
+- [Darwin process-group signal filtering](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c)

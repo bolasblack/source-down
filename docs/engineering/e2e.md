@@ -191,6 +191,8 @@ whole-window native event capture. Tests observe product process reaping before
 context cleanup. Native shims keep their real build paths, system calls and pause
 handshakes; helpers never repair a fault or retry a business operation implicitly.
 Publication waits assert the expected page count and resulting bytes or queries.
+An edit followed by search waits for that round's completed publication using a
+checkpoint; page replacement or deletion can precede the final index replacement.
 The bare word `published` also occurs in rejection diagnostics and is not a
 publication condition.
 They do not require round 1 to publish: a correctly discarded candidate can be

@@ -246,8 +246,19 @@ mod native {
             let stopped = terminate_process_tree(self.child.id() as i32);
             // Reap an already exited child even when signalling its group fails.
             // A failed signal must not make waiting for a live child unbounded.
-            self.child.try_wait()?;
-            stopped?;
+            let child_reaped = self.child.try_wait()?.is_some();
+            if let Err(error) = stopped {
+                // HIDDEN CONTEXT: Darwin can return EPERM for a group containing
+                // only zombies. Reaping may remove that group; a surviving group
+                // still makes the original signal failure a cleanup error.
+                let group_gone = error.raw_os_error() == Some(libc::EPERM)
+                    && child_reaped
+                    && unsafe { libc::kill(-(self.child.id() as i32), 0) } < 0
+                    && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+                if !group_gone {
+                    return Err(error);
+                }
+            }
             self.child.wait()?;
             self.armed = false;
             Ok(())

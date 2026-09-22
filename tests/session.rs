@@ -361,7 +361,7 @@ fn initialization_and_execution_failures_clean_every_started_instance_and_stop_b
 #[test]
 #[cfg(target_os = "linux")]
 fn a_failed_group_signal_still_reaps_an_exited_plugin() {
-    // SPEC-PLG-008: a signalling error must not bypass reaping an exited direct child.
+    // SPEC-PLG-008: reap the child and verify group absence before accepting EPERM cleanup.
     if let Some(root) = std::env::var_os("SD_FAILED_SIGNAL_ROOT") {
         let root = std::path::PathBuf::from(root);
         let mut session =
@@ -370,7 +370,8 @@ fn a_failed_group_signal_still_reaps_an_exited_plugin() {
             Ok(_) => panic!("accepted an invalid initialization frame"),
             Err(error) => error,
         };
-        assert!(error.message.contains("process cleanup:"), "{error}");
+        assert!(error.message.contains("invalid protocol JSON"), "{error}");
+        assert!(!error.message.contains("process cleanup:"), "{error}");
         let pid = std::fs::read_to_string(root.join("pid")).unwrap();
         processes::assert_stopped(&[pid.parse().unwrap()]);
         return;

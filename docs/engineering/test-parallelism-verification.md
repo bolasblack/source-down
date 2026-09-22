@@ -346,3 +346,60 @@ The Actions runner truncated this diagnostic at 4,096 characters, so annotation
 formatting now retains the identifying prefix and final exception within that
 bound; complete logs remain in artifacts. Temporary Windows repetitions collect
 native evidence for both cases during the next CI iteration.
+
+## Publication and exited-group follow-up
+
+History consolidation produced `c8328e4` with exactly the same tracked tree as
+`a6a5e4f`. Its [native CI run](https://github.com/bolasblack/source-down/actions/runs/35699974704)
+passed Linux verification and benchmarks, but failed two watch observations.
+Windows failed the empty-discovery repair's search with a missing index; macOS
+failed unknown-file repair after process-group cleanup returned `EPERM`.
+These failures qualify the earlier successful run; they were not code changes
+introduced by consolidation.
+
+The empty-discovery case waited for its replacement page and obsolete-page
+deletion, both of which precede the final index replacement. A Linux preload
+probe that delayed only that replacement by 300 milliseconds made the original
+search fail against the stale index. This proves the premature query without
+claiming to reproduce Windows's exact missing-file error. A checkpoint and the
+same round's completed-publication diagnostic now precede the existing search
+assertion; its timeout, page checks and preservation checks remain intact.
+The probe changed from failure in 0.38 seconds to success in 0.74 seconds.
+
+Darwin's group-signal implementation can return `EPERM` when its member filter
+finds only zombies. The Unix process owner already attempted to reap its direct
+child after a failed signal, but propagated that earlier error even when reaping
+removed the last group member. It now accepts that outcome only after a signal-zero
+probe reports that the entire group no longer exists. A surviving group or any
+other observation error retains the original cleanup failure; no signal retry,
+business retry or extra timeout is introduced.
+
+The new readable process-group scenario exercises both real exited/unreaped and
+live children through a native syscall fixture. Before the fix, its exited-child
+subtest failed on the false cleanup diagnostic while the live-child denial passed.
+After the fix both passed in 0.61 seconds, including reaping, successful watch
+repair and an explicit cleanup of the deliberately denied live fixture.
+Focused evidence is retained at:
+
+- Process cleanup red: `.source-down/e2e/runs/20260922T074949-b76fc4757d2f/results.json`.
+- Process cleanup green: `.source-down/e2e/runs/20260922T075141-9fc6efa6cf5a/results.json`.
+- Publication-window red: `.source-down/e2e/runs/20260922T074529-84d8712e5b72/results.json`.
+- Publication-window green: `.source-down/e2e/runs/20260922T075141-5cd013a13ad7/results.json`.
+
+These controlled results establish their particular boundaries on Linux. The
+subsequent native CI result must separately establish macOS and Windows outcomes.
+
+Full local validation passed with 481 jobs sharing 12 workers, including all 137
+readable E2E modules and their reading material, in 53.40 seconds. The retained
+suite is `.source-down/test-runs/20260922T080155-5cf6c444976f/results.json`; its
+E2E run is `.source-down/e2e/runs/20260922T080204-64193152da4c/results.json`, with
+every command's cleanup complete. The existing native reaping regression now
+requires the original protocol error without a false cleanup error. The process
+owner requires both a reaped direct child and an absent group before accepting
+the earlier permission error, preserving bounded failure for a live child.
+Coverage passed independently for Rust core (95.21%), the Rust spec plugin
+(96.43%) and the Python project plugin (94.17%). Formatting, Clippy and document
+checks passed; complete project review published 277 pages. Linux GNU release
+verification passed extracted-artifact tests and relocated-source rebuild in
+66.29 seconds, retaining the latter's E2E evidence at
+`.source-down/e2e/runs/20260922T080435-58b24e962e2a/results.json`.

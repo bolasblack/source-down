@@ -25,9 +25,11 @@ class EmptyDiscoveryRepair(E2ECase):
                                          since=failure)
                 self.assertEqual(project.snapshot(), saved)
 
+                restored = watch.checkpoint()
                 project.writeInPlace("docs/restored.py", "# Restored chapter\nvalue = 1\n")
                 watch.waitForOutputState(filesPresent=[".source-down/pages/docs/restored.py.md"])
                 watch.waitForOutputState(absent=[".source-down/pages/docs/index.md.md"])
+                watch.waitForPublishedPages(1, since=restored)
                 found = project.sourceDown.search("Restored")
                 self.assertRunResult(found, exitCode=0)
                 watch.interrupt()
